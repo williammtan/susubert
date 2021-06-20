@@ -1,5 +1,6 @@
+#!/bin/bash
+
 # example pipeline shell script
-# products: data/sku.csv
 
 master_products="data/sku.csv"
 products="data/sku.csv"
