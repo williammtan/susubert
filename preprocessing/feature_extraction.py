@@ -20,9 +20,9 @@ def mean_pooling(model_output, attention_mask):
     return sum_embeddings / sum_mask
 
 
-def feature_extraction(model, tokenizer, sentences, batch_size=1000):
+def feature_extraction(model, tokenizer, sentences, device, batch_size=1000):
     def get_embeddings(sentences):
-        encoded_input = tokenizer(sentences, padding=True, truncation=True, max_length=128, return_tensors='pt').to('cpu')
+        encoded_input = tokenizer(sentences, padding=True, truncation=True, max_length=128, return_tensors='pt').to(device)
 
         with torch.no_grad():
             model_output = model(**encoded_input)
@@ -37,8 +37,9 @@ def feature_extraction(model, tokenizer, sentences, batch_size=1000):
     return embedding
         
 def make_features_index(args):
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     tokenizer = BertTokenizer.from_pretrained(args.model)
-    model = AutoModel.from_pretrained(args.model).to('cpu')
+    model = AutoModel.from_pretrained(args.model).to(device)
 
     products = pd.read_csv(args.products)
     feature_embedding= feature_extraction(model, tokenizer, products.name)

@@ -3,7 +3,7 @@
 # example pipeline shell script
 
 master_products="data/sku.csv"
-products="data/sku.csv"
+products="data/products.csv"
 bert_model="indobenchmark/indobert-base-p1"
 
 # make bert base index for batch selection (create training data from master products)
