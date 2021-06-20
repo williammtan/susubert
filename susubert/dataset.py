@@ -1,44 +1,78 @@
-import re
 import torch
 from torch.utils.data import Dataset
+from sentence_transformers import InputExample
+from utils.utils import get_tokenizer
+import pandas as pd
+import os
 
 class BertMatcherDataset(Dataset):
-    def __init__(self, dataset, tokenizer, max_len=150):
-        self.dataset = dataset
-        self.dataset['name1'] = self.dataset['name1'].map(self.clean_text)
-        self.dataset['name2'] = self.dataset['name2'].map(self.clean_text)
-        self.tokenizer = tokenizer
+    def __init__(self, dataset, labels=None, lm=None, max_len=150):
+        """
+        Inputs:
+            dataset: str (to file) or list
+            labels: list of labels
+        """
+        if type(dataset) == str:
+            self.sents, self.labels = self.read_data(dataset)
+
+        elif type(dataset) == list:
+            self.sents = dataset
+            self.labels = labels
+        
+        assert len(self.sents) == len(self.labels), "Length of sents and labels don't match"
+
+        self.lm = lm
         self.max_len = max_len
+        self.tokenizer = get_tokenizer(self.lm)
+        self.tokenizer.add_tokens(['COL', 'VAL'], special_tokens=True)
+    
+    def read_data(self, fname):
+        file_extension = os.path.splitext(fname)[1]
+        sents = []
+        labels = []
 
-    def clean_text(self, text):
-        if text == None:
-            return 'None'
-        text = re.sub(r'\\.', '', text)  # Remove all \n \t etc..
-        text = re.sub(r'[^\w\s]*', '', text)  # Remove anything not a digit, letter, or space
-        return text.strip().lower()
+        if file_extension == '.txt':
+            for row in open(fname):
+                cols = row.split('\t')
+                if len(cols) == 3:
+                    sents.append(cols[:2])
+                    labels.append(int(cols[-1].replace('\n','')))
+        elif file_extension == '/csv':
+            pd.read_csv()
 
+        return sents, labels
+    
     def __len__(self):
-        return len(self.dataset)
-
-    def getColumn(self, col_name):
-        return self.dataset[col_name]
+        return len(self.sents)
 
     def __getitem__(self, idx):
-        # TODO: encode features as [COL] title [VAL] susu beruang 200ml [COL] price [VAL] 30.000 [KEY] weight [VAL] 300g
 
         if torch.is_tensor(idx):
             idx = idx.tolist()
-        row = self.dataset.iloc[idx, :]
+        
+        sents = self.sents[idx]
 
         x = self.tokenizer.encode(
-            text=row['name1'], text_pair=row['name2'], 
+            text=sents[0], text_pair=sents[1],
             add_special_tokens=True, 
             truncation="longest_first", 
             max_length=self.max_len, 
             return_tensors='pt', 
             pad_to_max_length=True,
         )
-        y = row['match']
+
+        if self.labels is not None:
+            y = self.labels[idx]
+        else:
+            y = None
 
         return x, y
 
+class SBertMatcherDataset(BertMatcherDataset):
+    def __getitem__(self, idx):
+        if torch.is_tensor(idx):
+            idx = idx.tolist()
+        
+        x = InputExample(texts=self.sents[idx], label=float(self.labels[idx]))
+
+        return x

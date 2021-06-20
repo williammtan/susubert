@@ -15,7 +15,7 @@ import argparse
 import pandas as pd
 import numpy as np
 
-from ..utils.index import load_index
+from utils.index import load_index
 
 def negative_hard(products, index):
     """Selects most similar products with different master products"""

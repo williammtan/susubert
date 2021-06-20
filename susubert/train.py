@@ -62,19 +62,19 @@ def train(hp):
         - lr: learning rate
         - save_model: boolean to save model
     """
-    df = pd.read_csv(hp.data)
-    train_set, val_set = train_test_split(df, train_size=hp.splits[0], test_size=hp.splits[1])
-    val_set, test_set = train_test_split(df, train_size=hp.splits[1], test_size=hp.splits[2])
-    del df
+    # df = pd.read_csv(hp.data)
+    # train_set, val_set = train_test_split(df, train_size=hp.splits[0], test_size=hp.splits[1])
+    # val_set, test_set = train_test_split(df, train_size=hp.splits[1], test_size=hp.splits[2])
+    # del df
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = BERTMatcher(hp.lm, device)
     model = model.to(device)
     tokenizer = AutoTokenizer.from_pretrained(hp.lm)
 
-    train_set = BertMatcherDataset(train_set, tokenizer)
-    val_set = BertMatcherDataset(val_set, tokenizer)
-    test_set = BertMatcherDataset(test_set, tokenizer)
+    train_set = BertMatcherDataset(hp.train_set, lm=hp.lm)
+    val_set = BertMatcherDataset(hp.val_set, lm=hp.lm)
+    test_set = BertMatcherDataset(hp.test_set, lm=hp.lm)
 
     optimizer = AdamW(model.parameters(),lr=hp.lr)
     num_steps = len(train_set) // hp.batch_size
@@ -90,16 +90,20 @@ def train(hp):
     print(f"<============= Test Results: =============>")
     print(classification_report(y_true, y_pred))
 
+    torch.save(model.state_dict(), args.save)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--task-name')
-    parser.add_argument('--data')
+    parser.add_argument('--train-set')
+    parser.add_argument('--val-set')
+    parser.add_argument('--test-set')
     parser.add_argument('--splits', nargs='+', type=float, default=[0.8, 0.1, 0.1])
     parser.add_argument('--lm', default='indobenchmark/indobert-base-p1')
     parser.add_argument('--n-epochs', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=2e-5)
-    parser.add_argument('--save-model', default=False, action='store_true')
+    parser.add_argument('--save')
 
     args = parser.parse_args()
     train(hp=args)

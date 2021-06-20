@@ -5,7 +5,7 @@ import pandas as pd
 from tqdm import tqdm
 from transformers import BertTokenizer, AutoModel
 
-from ..utils.index import make_index
+from utils.index import make_index
 
 def batch(iterable, n=1):
     l = len(iterable)
@@ -22,7 +22,7 @@ def mean_pooling(model_output, attention_mask):
 
 def feature_extraction(model, tokenizer, sentences, batch_size=1000):
     def get_embeddings(sentences):
-        encoded_input = tokenizer(sentences, padding=True, truncation=True, max_length=128, return_tensors='pt').to('cuda:0')
+        encoded_input = tokenizer(sentences, padding=True, truncation=True, max_length=128, return_tensors='pt').to('cpu')
 
         with torch.no_grad():
             model_output = model(**encoded_input)
@@ -38,7 +38,7 @@ def feature_extraction(model, tokenizer, sentences, batch_size=1000):
         
 def make_features_index(args):
     tokenizer = BertTokenizer.from_pretrained(args.model)
-    model = AutoModel.from_pretrained(args.model).to('cuda:0')
+    model = AutoModel.from_pretrained(args.model).to('cpu')
 
     products = pd.read_csv(args.products)
     feature_embedding= feature_extraction(model, tokenizer, products.name)

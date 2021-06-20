@@ -1,11 +1,12 @@
 import torch
 from torch import nn
-from transformers import AutoModel
+from transformers import AutoModel, AutoTokenizer
 
 class BERTMatcher(nn.Module):
     def __init__(self, lm, device='cpu'): # task = train | eval
         super().__init__()
         self.device = device
+        self.lm = lm
 
         self.bert = AutoModel.from_pretrained(lm).to(device)
         self.dropout = nn.Dropout(0.1)
@@ -28,5 +29,8 @@ class BERTMatcher(nn.Module):
         y_pred = logits.argmax(-1)
 
         return logits, y_pred
+    
+    def get_tokenizer(self):
+        return AutoTokenizer.from_pretrained(self.lm)
 
 
