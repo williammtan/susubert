@@ -36,12 +36,11 @@ def blocker(args):
     match_candidates = np.array(match_candidates, )
     match_candidates.sort()
     match_candidates = np.unique(match_candidates, axis=0)
-    print(match_candidates)
     
     output = open(args.output, 'w')
-    output.write('id1, id2\n')
+    output.write('id1,id2\n')
     for match in match_candidates:
-        output.write(f'{products[products.id == match[0]]["name"].iloc[0]}, {products[products.id == match[1]]["name"].iloc[0]} \n')
+        output.write(f'{match[0]}, {match[1]} \n')
 
 
 if __name__ == '__main__':
