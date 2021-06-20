@@ -28,7 +28,7 @@ def serialize_product_matches(matches, products, features):
     """Serialize matches given a products matches"""
     serialized = []
     for i, match in matches.iterrows():
-        serialized_matches = [' '.join(['COL ' + col + ' VAL ' + products[products.id == match['id'+str(i)]][col].iloc[0] for col in features]) for i in range(1,3)]
+        serialized_matches = [' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)]
 
         serialized.append(serialized_matches)
     
@@ -38,21 +38,29 @@ def serialize(args):
     matches = pd.read_csv(args.matches)
     f = open(args.output, 'w')
 
+    if args.products:
+        products = pd.read_csv(args.products)
+
     if 'match' in matches.columns:
-        sent_pairs = serialize_matches(matches, features=args.keep_columns)
+        if args.products:
+            sent_pairs = serialize_product_matches(matches, products, features=args.keep_columns)
+        else:
+            sent_pairs = serialize_matches(matches, features=args.keep_columns)
+
         for match_pair, is_match in zip(sent_pairs, matches.match.values):
             f.write(match_pair[0] + '\t' + match_pair[1] + '\t' + str(is_match) + '\n')
 
-    elif 'id1' in matches.columns and 'match' not in matches.columns and args.products:
-        products = pd.read_csv(args.products)
-        sent_pairs = serialize_product_matches(matches, products, features=args.keep_columns)
-        for (sent1, sent2) in sent_pairs:
-            f.write(sent1 + '\t' + sent2 + '\n')
-
     elif args.products:
-        sents = serialize_products(matches, features=args.keep_columns)
-        for serialized_sent, id in zip(sents, matches.id):
-            f.write(id + '\t' + serialized_sent + '\n')
+        if 'id1' in matches.columns:
+            sent_pairs = serialize_product_matches(matches, products, features=args.keep_columns)
+            for sent1, sent2 in sent_pairs:
+                f.write(sent1 + '\t' + sent2 + '\n')
+            
+        else:
+            sent_pairs = serialize_products(matches, features=args.keep_columns)
+
+            for serialized_sent, id in zip(sent_pairs, matches.id):
+                f.write(id + '\t' + serialized_sent + '\n')
 
 
 if __name__ == '__main__':

@@ -54,18 +54,13 @@ def train(hp):
     """
     hp: Hyperparameters
         - task_name: task/run name
-        - data: str to dataset (schema: name1, name2, match)
-        - splits: list of values (train, val, test)
+        - train_set, val_set, test_set: str to dataset (schema: name1, name2, match)
         - lm: language model (default: indobenchmark/indobert-base-p1)
         - n_epochs: number of epochs
         - batch_size
         - lr: learning rate
-        - save_model: boolean to save model
+        - save: boolean to save model
     """
-    # df = pd.read_csv(hp.data)
-    # train_set, val_set = train_test_split(df, train_size=hp.splits[0], test_size=hp.splits[1])
-    # val_set, test_set = train_test_split(df, train_size=hp.splits[1], test_size=hp.splits[2])
-    # del df
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     model = BERTMatcher(hp.lm, device)
@@ -98,7 +93,6 @@ if __name__ == '__main__':
     parser.add_argument('--train-set')
     parser.add_argument('--val-set')
     parser.add_argument('--test-set')
-    parser.add_argument('--splits', nargs='+', type=float, default=[0.8, 0.1, 0.1])
     parser.add_argument('--lm', default='indobenchmark/indobert-base-p1')
     parser.add_argument('--n-epochs', type=int, default=5)
     parser.add_argument('--batch-size', type=int, default=32)

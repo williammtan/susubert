@@ -6,6 +6,7 @@
 
 import argparse
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 import torch
@@ -14,11 +15,11 @@ from torch.utils.data import DataLoader, SequentialSampler
 
 from dataset import BertMatcherDataset
 
-def predict(hp):
-    matches = BertMatcherDataset(hp.matches)
-    model = torch.load(hp.model)
+def predict(matches, model, batch_size):
+    matches = BertMatcherDataset(matches)
+    model = torch.load(model)
 
-    dataloader = DataLoader(matches, hp.batch_size, sampler=SequentialSampler(matches))
+    dataloader = DataLoader(matches, batch_size, sampler=SequentialSampler(matches))
 
     y_preds = np.empty(0)
     y_probs = np.empty(0)
@@ -39,20 +40,31 @@ def predict(hp):
     
     return y_preds, y_probs
 
+def matcher(args):
+    y_preds, y_probs = predict(args.matches, args.model, args.batch_size)
+
+    # write to output
+    block_matches = pd.read_csv(args.block_matches)
+    output = []
+    for i, candidate in block_matches.iterrows():
+        output.append({
+            "id1": candidate['id1'],
+            "id2": candidate['id2'],
+            "match": y_preds[i],
+            "prob": y_probs[i]
+        })
+    output = pd.DataFrame(output)
+    output.to_csv(args.output)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--lm')
     parser.add_argument('--model')
     parser.add_argument('--matches')
+    parser.add_argument('--block-matches')
     parser.add_argument('--batch-size')
     parser.add_argument('--output')
 
     args = parser.parse_args()
 
-    y_preds, y_probs = predict(args)
-
-    # write to output
-    output = open(args.output, 'w')
-    for y_pred, y_prob in zip(y_preds, y_probs):
-        output.write(str(y_pred) + '\t' + y_probs + '\n')
+    matcher(args)
 
