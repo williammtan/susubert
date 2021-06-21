@@ -10,41 +10,20 @@ import pandas as pd
 from tqdm import tqdm
 import jsonlines
 
-import torch
-from torch import nn
-from torch.utils.data import DataLoader, SequentialSampler
-from transformers import AutoModel
+from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
+import tensorflow as tf
 
-from susubert.dataset import BertMatcherDataset
-
-def predict(matches, model, batch_size):
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = model.to(device)
-
-    dataloader = DataLoader(matches, batch_size, sampler=SequentialSampler(matches))
-
-    y_preds = np.empty(0)
-    y_probs = np.empty(0)
-
-    softmax = nn.Softmax(2)
-
-    model.train()
-    for i, x in enumerate(dataloader):
-
-        logits, y_pred, = model(x)
-        logits = logits.reshape(logits.shape[0], 1 , 2)
-        logits = softmax(logits)
-
-        y_preds = np.append(y_preds, y_pred.cpu().detach().numpy())
-        y_probs = np.append(y_probs, logits[y_pred].cpu().detach().numpy()) # get probability of prediction
-    
-    return y_preds, y_probs
 
 def matcher(args):
-    def predict_batch(x, model, block_matches, writer):
+    def predict_batch(x, model, tokenizer, block_matches, writer):
         """Predict batch and write to file"""
-        matches = BertMatcherDataset(x, lm=args.lm)
-        y_preds, y_probs = predict(matches, model, 32)
+        input_encodings = tokenizer(text=[m[0] for m in matches], text_pair=[m[1] for m in matches], truncation=True, padding=True)
+        dataset = tf.data.Dataset.from_tensor_slices((
+            dict(input_encodings)
+        ))
+        logits = model.predict(dataset.batch(32))
+        y_preds = np.argmax(logits, axis=1)
+        y_probs = logits[y_preds]
 
         for idx in range(len(block_matches)):
             output = {
@@ -55,20 +34,19 @@ def matcher(args):
             }
             writer.write(output)
 
-
-    model = AutoModel.from_pretrained(args.lm)
-    model = torch.load(args.model)
+    model = TFAutoModelForSequenceClassification.from_pretrained(args.model)
+    tokenizer = AutoTokenizer.from_pretrained(args.lm)
 
     with jsonlines.open(args.output, 'w') as writer, open(args.block_matches) as block_f, open(args.matches) as matches_f:
         blocks = []
         matches = []
         next(block_f) # skip header row
-        for block, match in tqdm(zip(block_f, matches_f), total=18758):
+        for block, match in tqdm(zip(block_f, matches_f)):
             blocks.append(block.split(',')) # eg. [[2341351, 1351325], [12415131, 135135]]
             matches.append(match)
 
             if len(matches) == args.batch_size:
-                predict_batch(matches, model, blocks, writer)
+                predict_batch(matches, model, tokenizer, blocks, writer)
                 blocks.clear()
                 matches.clear()
         

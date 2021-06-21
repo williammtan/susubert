@@ -50,10 +50,7 @@ def train(hp):
     print(f"<============= Test evaluation =============>")
     model.evaluate(test_dataset.batch(hp.batch_size), return_dict=True, batch_size=hp.batch_size)
 
-    if not os.path.isdir(hp.save):
-        os.makedirs(hp.save)
-
-    model.save(hp.save)
+    model.save_pretrained(hp.save)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
