@@ -20,8 +20,7 @@ def train_epoch(model, train_set, optimizer, scheduler, batch_size):
     dataloader = DataLoader(train_set, batch_size, sampler=RandomSampler(train_set))
     criterion = nn.CrossEntropyLoss()
 
-    for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
-        x, _ = batch
+    for i, x in tqdm(enumerate(dataloader), total=len(dataloader)):
 
         logits, y_pred = model(x)
         loss = criterion(logits, y_pred) # get loss from criterion
@@ -81,11 +80,11 @@ def train(hp):
         print(f"<============= Validation Results: epoch {i+1} =============>")
         print(classification_report(y_true, y_pred))
     
-    y_true, y_pred = val_epoch(test_set, val_set, hp.batch_size)
+    y_true, y_pred = val_epoch(model, test_set, hp.batch_size)
     print(f"<============= Test Results: =============>")
     print(classification_report(y_true, y_pred))
 
-    torch.save(model.state_dict(), args.save)
+    torch.save(model, args.save)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -94,9 +93,9 @@ if __name__ == '__main__':
     parser.add_argument('--val-set')
     parser.add_argument('--test-set')
     parser.add_argument('--lm', default='indobenchmark/indobert-base-p1')
-    parser.add_argument('--n-epochs', type=int, default=5)
+    parser.add_argument('--n-epochs', type=int, default=20)
     parser.add_argument('--batch-size', type=int, default=32)
-    parser.add_argument('--lr', type=float, default=2e-5)
+    parser.add_argument('--lr', type=float, default=3e-5)
     parser.add_argument('--save')
 
     args = parser.parse_args()

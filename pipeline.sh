@@ -32,13 +32,13 @@ python -m susubert.train \
     --train-set save/train_matches.serialized.txt \
     --val-set save/val_matches.serialized.txt \
     --test-set save/test_matches.serialized.txt \
-    --save save/susubert
+    --save save/susubert.pt
 
 
-# train s-bert model and get match candidates
+train s-bert model and get match candidates
 python -m blocking.train_blocker \
     --lm $bert_model \
-    --data matches.serialized.txt \
+    --data save/matches.serialized.txt \
     --save save/s-bert # get s-bert model
 
 python -m blocking.blocker \
@@ -53,7 +53,8 @@ python -m preprocessing.serialize \
     --output save/blocked_candidates.serialized.txt
 
 python -m susubert.matcher \
-    --model save/susubert \
+    --model save/susubert.pt \
+    --lm indobenchmark/indobert-base-p1 \
     --matches save/blocked_candidates.serialized.txt \
     --block-matches save/blocked_candidates.csv \
     --output save/blocked_matches.csv

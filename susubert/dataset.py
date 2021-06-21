@@ -19,12 +19,13 @@ class BertMatcherDataset(Dataset):
             self.sents = dataset
             self.labels = labels
         
-        assert len(self.sents) == len(self.labels), "Length of sents and labels don't match"
+        if labels != None:
+            assert len(self.sents) == len(self.labels), "Length of sents and labels don't match"
 
         self.lm = lm
         self.max_len = max_len
         self.tokenizer = get_tokenizer(self.lm)
-        self.tokenizer.add_tokens(['COL', 'VAL'], special_tokens=True)
+        # self.tokenizer.add_tokens(['COL', 'VAL'], special_tokens=True)
     
     def read_data(self, fname):
         file_extension = os.path.splitext(fname)[1]
@@ -34,9 +35,10 @@ class BertMatcherDataset(Dataset):
         if file_extension == '.txt':
             for row in open(fname):
                 cols = row.split('\t')
-                if len(cols) == 3:
+                if len(cols) >= 2:
                     sents.append(cols[:2])
-                    labels.append(int(cols[-1].replace('\n','')))
+                    if len(cols) == 3:
+                        labels.append(int(cols[-1].replace('\n','')))
         elif file_extension == '/csv':
             pd.read_csv()
 
@@ -57,16 +59,14 @@ class BertMatcherDataset(Dataset):
             add_special_tokens=True, 
             truncation="longest_first", 
             max_length=self.max_len, 
-            return_tensors='pt', 
-            pad_to_max_length=True,
+            return_tensors='pt',
         )
 
-        if self.labels is not None:
+        if self.labels is not None and len(self.labels) != 0:
             y = self.labels[idx]
+            return x,y
         else:
-            y = None
-
-        return x, y
+            return x
 
 class SBertMatcherDataset(BertMatcherDataset):
     def __getitem__(self, idx):

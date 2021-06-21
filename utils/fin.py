@@ -5,7 +5,8 @@ from igraph import Graph, plot
 def fin(args):
     products = pd.read_csv(args.products)
     id_mapping = dict(zip(products.id, range(len(products))))
-    matches = pd.read_csv(args.matches)
+    matches = pd.read_json(args.matches, lines=True)
+    print(matches)
 
     g = Graph()
     g.add_vertices(len(products))
@@ -16,7 +17,7 @@ def fin(args):
         for prod_idx in c:
             products.loc[prod_idx]['fin'] = i
     
-    products.to_csv(args.output)
+    products[['id','name', 'master_product']].to_csv(args.output)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -24,3 +25,5 @@ if __name__ == '__main__':
     parser.add_argument('--matches')
     parser.add_argument('--output')
     args = parser.parse_args()
+
+    fin(args)

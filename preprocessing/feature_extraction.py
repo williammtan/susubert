@@ -42,7 +42,7 @@ def make_features_index(args):
     model = AutoModel.from_pretrained(args.model).to(device)
 
     products = pd.read_csv(args.products)
-    feature_embedding= feature_extraction(model, tokenizer, products.name)
+    feature_embedding= feature_extraction(model, tokenizer, products.name, device)
 
     index, ids_mapping = make_index(feature_embedding, products.id.values)
     index.save(args.save)

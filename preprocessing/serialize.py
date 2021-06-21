@@ -28,7 +28,8 @@ def serialize_product_matches(matches, products, features):
     """Serialize matches given a products matches"""
     serialized = []
     for i, match in matches.iterrows():
-        serialized_matches = [' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)]
+        # serialized_matches = [' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)]
+        serialized_matches = [products[products.id == match['id'+str(i)]]['name'].iloc[0] for i in range(1,3)]
 
         serialized.append(serialized_matches)
     
