@@ -5,7 +5,7 @@
 ################################################################################
 
 from sentence_transformers import SentenceTransformer, models, losses
-from susubert.dataset import SBertMatcherDataset
+from dataset import SBertMatcherDataset
 from torch.utils.data import DataLoader
 import argparse
 
