@@ -1,3 +1,4 @@
+import os
 from transformers import AutoTokenizer
 from tensorflow import keras
 import tensorflow as tf
@@ -13,7 +14,7 @@ def make_match_dataset(dataset_path, tokenizer):
     input_encodings = tokenizer(text=sent1, text_pair=sent2, truncation=True, padding=True)
     dataset = tf.data.Dataset.from_tensor_slices((
         dict(input_encodings),
-        labels
+        [int(l) for l in labels]
     ))
     return dataset
 
@@ -28,7 +29,7 @@ def train(hp):
         - lr: learning rate
         - save: boolean to save model
     """
-    model = TFAutoModelForSequenceClassification.from_pretrained(hp.lm)
+    model = TFAutoModelForSequenceClassification.from_pretrained(hp.lm, num_labels=2)
     tokenizer = AutoTokenizer.from_pretrained(hp.lm)
 
     train_dataset = make_match_dataset(hp.train_set, tokenizer)
@@ -38,7 +39,7 @@ def train(hp):
 
     tensorboard_callback = keras.callbacks.TensorBoard(log_dir=hp.logdir)
 
-    optimizer = keras.optimizers.Adam(learning_rate=5e-5)
+    optimizer = keras.optimizers.Adam(learning_rate=hp.lr)
     model.compile(optimizer=optimizer, loss=model.compute_loss, metrics=['accuracy']) # can also use any keras loss fn
     model.fit(
         train_dataset.shuffle(len(train_dataset)).batch(hp.batch_size), epochs=hp.n_epochs, 
@@ -49,6 +50,9 @@ def train(hp):
     print(f"<============= Test evaluation =============>")
     model.evaluate(test_dataset.batch(hp.batch_size), return_dict=True, batch_size=hp.batch_size)
 
+    if not os.path.isdir(hp.save):
+        os.makedirs(hp.save)
+
     model.save(hp.save)
 
 if __name__ == '__main__':
@@ -58,7 +62,7 @@ if __name__ == '__main__':
     parser.add_argument('--val-set')
     parser.add_argument('--test-set')
     parser.add_argument('--lm', default='indobenchmark/indobert-base-p1')
-    parser.add_argument('--n-epochs', type=int, default=20)
+    parser.add_argument('--n-epochs', type=int, default=3)
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=3e-5)
     parser.add_argument('--save')
