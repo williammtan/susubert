@@ -1,53 +1,21 @@
-import torch
-from torch import nn
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from transformers import AdamW, get_linear_schedule_with_warmup, AutoTokenizer
+from transformers import AutoTokenizer
+from tensorflow import keras
+import tensorflow as tf
 
 import argparse
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
-from sklearn.metrics import classification_report
-from sklearn.model_selection import train_test_split
+from transformers import TFAutoModelForSequenceClassification
 
-from susubert.model import BERTMatcher
-from susubert.dataset import BertMatcherDataset
+from utils.utils import read_matches
 
-def unzip_dataloader(inputs):
-    return list(zip(*inputs))
-
-def train_epoch(model, train_set, optimizer, scheduler, batch_size):
-    dataloader = DataLoader(train_set, batch_size, sampler=RandomSampler(train_set))
-    criterion = nn.CrossEntropyLoss()
-
-    for i, x in tqdm(enumerate(dataloader), total=len(dataloader)):
-
-        logits, y_pred = model(x)
-        loss = criterion(logits, y_pred) # get loss from criterion
-
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
-        scheduler.step()
-
-
-def val_epoch(model, val_set, batch_size):
-    dataloader = DataLoader(val_set, batch_size, sampler=SequentialSampler(val_set))
-
-    y_preds = np.empty(0)
-    y_trues = np.empty(0)
-
-    model.train()
-    for i, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
-        x, y_true = batch
-
-        logits, y_pred, = model(x)
-
-        y_preds = np.append(y_preds, y_pred.cpu().numpy())
-        y_trues = np.append(y_trues, y_true.cpu().numpy())
-    
-    return y_trues, y_preds
-
+def make_match_dataset(dataset_path, tokenizer):
+    sents, labels = read_matches(dataset_path)
+    sent1, sent2 = list(zip(*sents))
+    input_encodings = tokenizer(text=sent1, text_pair=sent2, truncation=True, padding=True)
+    dataset = tf.data.Dataset.from_tensor_slices((
+        dict(input_encodings),
+        labels
+    ))
+    return dataset
 
 def train(hp):
     """
@@ -60,31 +28,28 @@ def train(hp):
         - lr: learning rate
         - save: boolean to save model
     """
-
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model = BERTMatcher(hp.lm, device)
-    model = model.to(device)
+    model = TFAutoModelForSequenceClassification.from_pretrained(hp.lm)
     tokenizer = AutoTokenizer.from_pretrained(hp.lm)
 
-    train_set = BertMatcherDataset(hp.train_set, lm=hp.lm)
-    val_set = BertMatcherDataset(hp.val_set, lm=hp.lm)
-    test_set = BertMatcherDataset(hp.test_set, lm=hp.lm)
+    train_dataset = make_match_dataset(hp.train_set, tokenizer)
+    val_dataset = make_match_dataset(hp.val_set, tokenizer)
+    test_dataset = make_match_dataset(hp.test_set, tokenizer)
 
-    optimizer = AdamW(model.parameters(),lr=hp.lr)
-    num_steps = len(train_set) // hp.batch_size
-    scheduler = get_linear_schedule_with_warmup(optimizer,num_warmup_steps=0, num_training_steps=num_steps * hp.n_epochs)
 
-    for i in range(hp.n_epochs):
-        train_epoch(model, train_set, optimizer, scheduler, hp.batch_size)
-        y_true, y_pred = val_epoch(model, val_set, hp.batch_size)
-        print(f"<============= Validation Results: epoch {i+1} =============>")
-        print(classification_report(y_true, y_pred))
-    
-    y_true, y_pred = val_epoch(model, test_set, hp.batch_size)
-    print(f"<============= Test Results: =============>")
-    print(classification_report(y_true, y_pred))
+    tensorboard_callback = keras.callbacks.TensorBoard(log_dir=hp.logdir)
 
-    torch.save(model, args.save)
+    optimizer = keras.optimizers.Adam(learning_rate=5e-5)
+    model.compile(optimizer=optimizer, loss=model.compute_loss, metrics=['accuracy']) # can also use any keras loss fn
+    model.fit(
+        train_dataset.shuffle(len(train_dataset)).batch(hp.batch_size), epochs=hp.n_epochs, 
+        batch_size=hp.batch_size, validation_data=val_dataset.shuffle(len(val_dataset)).batch(hp.batch_size),
+        callbacks=[tensorboard_callback]
+    )
+
+    print(f"<============= Test evaluation =============>")
+    model.evaluate(test_dataset.batch(hp.batch_size), return_dict=True, batch_size=hp.batch_size)
+
+    model.save(hp.save)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -97,6 +62,7 @@ if __name__ == '__main__':
     parser.add_argument('--batch-size', type=int, default=32)
     parser.add_argument('--lr', type=float, default=3e-5)
     parser.add_argument('--save')
+    parser.add_argument('--logdir', default='log/')
 
     args = parser.parse_args()
     train(hp=args)
