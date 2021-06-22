@@ -13,22 +13,21 @@ def index_sbert(sbert, products):
 
     return index
 
-def blocker(args):
-    products = pd.read_csv(args.products)
+def blocker(model, products, save_index, top_k, threshold):
 
-    sbert = SentenceTransformer(args.model)
-    if not os.path.isfile(args.save_index):
+    sbert = SentenceTransformer(model)
+    if not os.path.isfile(save_index):
         index = index_sbert(sbert, products)
-        index.save(args.save_index)
+        index.save(save_index)
     else:
-        index = load_index(args.save_index, dimensions=768)
+        index = load_index(save_index, dimensions=768)
 
     match_candidates = []
 
     for i, prod in products.iterrows():
-        nn = np.array(index.get_nns_by_item(i, n=args.top_k, include_distances=True)).T
-        if args.threshold:
-            nn = nn[[nn[:, 1] > args.threshold]]
+        nn = np.array(index.get_nns_by_item(i, n=top_k, include_distances=True)).T
+        if threshold:
+            nn = nn[[nn[:, 1] > threshold]]
         nn_ids = products[products.index.isin(nn[:, 0])].id.values
         for id in nn_ids:
             match_candidates.append((prod.id, id))

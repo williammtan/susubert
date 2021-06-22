@@ -2,10 +2,9 @@ import argparse
 import pandas as pd
 from igraph import Graph, plot
 
-def fin(args):
-    products = pd.read_csv(args.products)
+def fin(products, matches):
     id_mapping = dict(zip(products.id, range(len(products))))
-    matches = pd.read_json(args.matches, lines=True)
+    matches = pd.read_json(matches, lines=True)
     print(matches)
 
     g = Graph()
@@ -17,7 +16,7 @@ def fin(args):
         for prod_idx in c:
             products.loc[prod_idx]['fin'] = i
     
-    products[['id','name', 'master_product']].to_csv(args.output)
+    return products
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

@@ -11,3 +11,16 @@ def download_from_gcs(gcs_url, fname):
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(blob_loc)
     blob.download_to_filename(fname)
+
+
+def upload_blob(gcs_url, fname):
+    """Uploads a file to the bucket."""
+    gcs_loc = gcs_url.split('gs://')[1]
+    bucket_name = gcs_loc.split('/')[0]
+    blob_loc = '/'.join(gcs_loc.split('/')[1:])
+
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(blob_loc)
+
+    blob.upload_from_filename(fname)

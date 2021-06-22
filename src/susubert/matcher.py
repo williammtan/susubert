@@ -14,7 +14,7 @@ from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
 import tensorflow as tf
 
 
-def matcher(args):
+def matcher(lm, model, matches, block_matches, batch_size, output):
     def predict_batch(x, model, tokenizer, block_matches, writer):
         """Predict batch and write to file"""
         input_encodings = tokenizer(text=[m[0] for m in matches], text_pair=[m[1] for m in matches], truncation=True, padding=True)
@@ -34,10 +34,10 @@ def matcher(args):
             }
             writer.write(output)
 
-    model = TFAutoModelForSequenceClassification.from_pretrained(args.model)
-    tokenizer = AutoTokenizer.from_pretrained(args.lm)
+    model = TFAutoModelForSequenceClassification.from_pretrained(model)
+    tokenizer = AutoTokenizer.from_pretrained(lm)
 
-    with jsonlines.open(args.output, 'w') as writer, open(args.block_matches) as block_f, open(args.matches) as matches_f:
+    with jsonlines.open(output, 'w') as writer, open(block_matches) as block_f, open(matches) as matches_f:
         blocks = []
         matches = []
         next(block_f) # skip header row
@@ -45,7 +45,7 @@ def matcher(args):
             blocks.append(block.split(',')) # eg. [[2341351, 1351325], [12415131, 135135]]
             matches.append(match)
 
-            if len(matches) == args.batch_size:
+            if len(matches) == batch_size:
                 predict_batch(matches, model, tokenizer, blocks, writer)
                 blocks.clear()
                 matches.clear()
