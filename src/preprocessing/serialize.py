@@ -28,40 +28,48 @@ def serialize_product_matches(matches, products, features):
     """Serialize matches given a products matches"""
     serialized = []
     for i, match in matches.iterrows():
-        # serialized_matches = [' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)]
-        serialized_matches = [products[products.id == match['id'+str(i)]]['name'].iloc[0] for i in range(1,3)]
+        serialized_matches = [' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)]
+        # serialized_matches = [products[products.id == match['id'+str(i)]]['name'].iloc[0] for i in range(1,3)]
 
         serialized.append(serialized_matches)
     
     return serialized
 
-def serialize(args):
-    matches = pd.read_csv(args.matches)
-    f = open(args.output, 'w')
-
-    if args.products:
-        products = pd.read_csv(args.products)
+def serialize(matches, products, keep_columns):
+    match_df = []
 
     if 'match' in matches.columns:
-        if args.products:
-            sent_pairs = serialize_product_matches(matches, products, features=args.keep_columns)
+        if products is not None:
+            sent_pairs = serialize_product_matches(matches, products, features=keep_columns)
         else:
-            sent_pairs = serialize_matches(matches, features=args.keep_columns)
+            sent_pairs = serialize_matches(matches, features=keep_columns)
 
         for match_pair, is_match in zip(sent_pairs, matches.match.values):
-            f.write(match_pair[0] + '\t' + match_pair[1] + '\t' + str(is_match) + '\n')
+            match_df.append({
+                "sent1": match_pair[0],
+                "sent2": match_pair[1],
+                "match": is_match
+            })
 
-    elif args.products:
+    elif products is not None:
         if 'id1' in matches.columns:
-            sent_pairs = serialize_product_matches(matches, products, features=args.keep_columns)
+            sent_pairs = serialize_product_matches(matches, products, features=keep_columns)
             for sent1, sent2 in sent_pairs:
-                f.write(sent1 + '\t' + sent2 + '\n')
+                match_df.append({
+                    "sent1": sent1,
+                    "sent2": sent2,
+                })
             
         else:
-            sent_pairs = serialize_products(matches, features=args.keep_columns)
+            sent_pairs = serialize_products(matches, features=keep_columns)
 
             for serialized_sent, id in zip(sent_pairs, matches.id):
-                f.write(id + '\t' + serialized_sent + '\n')
+                match_df.append({
+                    "id": id,
+                    "sent": serialized_sent,
+                })
+    match_df = pd.DataFrame(match_df)
+    return match_df
 
 
 if __name__ == '__main__':

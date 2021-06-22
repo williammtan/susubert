@@ -15,7 +15,7 @@ import argparse
 import pandas as pd
 import numpy as np
 
-from utils.index import load_index
+from ..utils.index import load_index
 
 def negative_hard(products, index):
     """Selects most similar products with different master products"""
@@ -59,9 +59,8 @@ def positive_hard(products, index):
             yield (offers.loc[target_offer].id, offers.loc[offers.index[most_different]].id)
     
         
-def batch_selection(args):
-    products = pd.read_csv(args.products)
-    index = load_index(args.index, dimensions=args.index_dims)
+def batch_selection(products, index):
+    # index = load_index(index, dimensions=index_dims)
     
     match_df = []
     negative_pairs = list(negative_hard(products, index))
@@ -87,7 +86,7 @@ def batch_selection(args):
         })
     
     match_df = pd.DataFrame(match_df).drop_duplicates(subset=['name1', 'name2'])
-    match_df.to_csv(args.output, index=False)
+    return match_df
 
 
 if __name__ == '__main__':
@@ -99,5 +98,6 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
 
-    batch_selection(args)
+    match_df = batch_selection(args.products, args.index, args.index_dims)
+    match_df.to_csv(args.output, index=False)
 

@@ -1,7 +1,7 @@
 import torch
 from torch.utils.data import Dataset
 from sentence_transformers import InputExample
-from utils.utils import get_tokenizer
+from ..utils.utils import get_tokenizer
 import pandas as pd
 import os
 

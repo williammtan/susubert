@@ -6,7 +6,7 @@ import tensorflow as tf
 import argparse
 from transformers import TFAutoModelForSequenceClassification
 
-from utils.utils import read_matches
+from ..utils.utils import read_matches
 
 def make_match_dataset(dataset_path, tokenizer):
     sents, labels = read_matches(dataset_path)

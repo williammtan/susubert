@@ -1,6 +1,6 @@
-from utils.index import make_index, load_index
+from ..utils.index import make_index, load_index
+from ..preprocessing.serialize import serialize_products
 from sentence_transformers import SentenceTransformer
-from preprocessing.serialize import serialize_products
 import pandas as pd
 import numpy as np
 import argparse

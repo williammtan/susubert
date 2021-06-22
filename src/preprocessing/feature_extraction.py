@@ -4,8 +4,11 @@ import pandas as pd
 from tqdm import tqdm
 from transformers import BertTokenizer, TFAutoModel
 import tensorflow as tf
+import os
 
-from utils.index import make_index
+from ..utils.index import make_index
+from ..utils.gcs import download_from_gcs
+import tempfile
 
 def batch(iterable, n=1):
     l = len(iterable)
@@ -38,23 +41,32 @@ def feature_extraction(model, tokenizer, sentences, batch_size=1000):
     
     return embedding
         
-def make_features_index(args):
-    tokenizer = BertTokenizer.from_pretrained(args.model)
-    model = TFAutoModel.from_pretrained(args.model)
+def make_features_index(model, products):
+    tokenizer = BertTokenizer.from_pretrained(model)
+    model = TFAutoModel.from_pretrained(model)
 
-    products = pd.read_csv(args.products)
     feature_embedding= feature_extraction(model, tokenizer, products.name)
 
     index, _ = make_index(feature_embedding, products.id.values)
-    index.save(args.save)
+    return index
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('-b', '--bucket')
     parser.add_argument('-p', '--products')
     parser.add_argument('-m', '--model')
     parser.add_argument('-s', '--save')
     args = parser.parse_args()
 
-    make_features_index(args)
+    tempdir = tempfile.mkdtemp(prefix='feature-extractor')
+    products_temp = os.path.join(tempdir, 'products.csv')
+    index_temp = os.path.join(tempdir, 'index.csv')
+
+    download_blob(args.bucket, args.products, )
+    products = pd.read_csv(args.products)
+
+    index = make_features_index(args.model, products, products_temp)
+    index.save(os.path.join(tempdir, index_temp))
+    upload_to_storage(args.save, index_temp)
 
 
