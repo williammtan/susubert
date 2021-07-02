@@ -14,8 +14,10 @@
 import argparse
 import pandas as pd
 import numpy as np
+from itertools import combinations
+from tqdm import tqdm
 
-from ..utils.index import load_index
+from utils.index import load_index
 
 def negative_hard(products, index):
     """Selects most similar products with different master products"""
@@ -26,7 +28,7 @@ def negative_hard(products, index):
         search_size = round(len(offers) * 1.5)
         for i in offers.index:
             top_n = index.get_nns_by_item(i, search_size, include_distances=True)
-            top_n = [top_n[0][i] for i, dis in enumerate(top_n[1]) if dis < 0.7]
+            top_n = [top_n[0][i] for i, dis in enumerate(top_n[1])]
             non_master = [products.iloc[o].id for o in top_n if products.iloc[o].master_product != master]
             for non in non_master:
                 yield (non, offers.loc[i].id)
@@ -58,9 +60,21 @@ def positive_hard(products, index):
             most_different = np.argmax([index.get_distance(target_offer, o) for o in offers.index])
             yield (offers.loc[target_offer].id, offers.loc[offers.index[most_different]].id)
     
+def positive_all(products):
+    id_combinations = np.array(list(combinations(products.id.values, 2)))
+    match_df = []
+    for id1, id2 in tqdm(id_combinations):
+        match = 1 if products[products.id == id1].master_product.iloc[0] == products[products.id == id2].master_product.iloc[0] else 0
+        match_df.append({
+            "id1":id1,
+            "id2":id2,
+            "match":match
+        })
+    match_df = pd.DataFrame(match_df)
+    
+    return match_df[match_df.match == 1]
         
 def batch_selection(products, index):
-    # index = load_index(index, dimensions=index_dims)
     
     match_df = []
     negative_pairs = list(negative_hard(products, index))
@@ -85,7 +99,9 @@ def batch_selection(products, index):
             "match": 1
         })
     
-    match_df = pd.DataFrame(match_df).drop_duplicates(subset=['name1', 'name2'])
+    match_df = pd.concat([pd.DataFrame(match_df), positive_all(products)])
+    
+    match_df = match_df.drop_duplicates(subset=['id1', 'id2'])
     return match_df
 
 

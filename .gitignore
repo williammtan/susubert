@@ -4,3 +4,8 @@
 save/
 data/products.csv
 log
+data/
+models/
+notebooks/out
+notebooks/runs
+notebooks/index

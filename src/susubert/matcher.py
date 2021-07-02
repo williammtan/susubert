@@ -8,50 +8,42 @@ import argparse
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
-import jsonlines
 
 from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
 import tensorflow as tf
+from tensorflow.nn import softmax
 
 
-def matcher(lm, model, matches, block_matches, batch_size, output):
-    def predict_batch(x, model, tokenizer, block_matches, writer):
+def matcher(lm, model, matches, block_matches, batch_size, threshold=0.5):
+    match_results = []
+    def predict_batch(batch, model, tokenizer):
         """Predict batch and write to file"""
-        input_encodings = tokenizer(text=[m[0] for m in matches], text_pair=[m[1] for m in matches], truncation=True, padding=True)
+        input_encodings = tokenizer(text=batch.sent1.tolist(), text_pair=batch.sent2.tolist(), truncation=True, padding=True)
         dataset = tf.data.Dataset.from_tensor_slices((
             dict(input_encodings)
         ))
-        logits = model.predict(dataset.batch(32))
-        y_preds = np.argmax(logits, axis=1)
-        y_probs = logits[y_preds]
+        logits = model.predict(dataset.batch(32), batch_size=32).logits
+        logits = softmax(logits).numpy() # [[0.3, 0.7], [0.4, 0.6], [0.9, 0.1]]
+        # y_preds = np.argmax(logits, axis=1) # [1,1,0]
 
-        for idx in range(len(block_matches)):
-            output = {
-                "id1": block_matches[idx][0],
-                "id2": block_matches[idx][1],
-                "match": y_preds[idx],
-                "prob": y_probs[idx]
-            }
-            writer.write(output)
+        for idx in range(len(batch)):
+            match = 1 if logits[idx][1] > threshold else 0
+            match_results.append({
+                "id1": batch.iloc[idx].id1,
+                "id2": batch.iloc[idx].id2,
+                "match": match,
+                "prob": logits[idx][1]
+            })
 
     model = TFAutoModelForSequenceClassification.from_pretrained(model)
     tokenizer = AutoTokenizer.from_pretrained(lm)
 
-    with jsonlines.open(output, 'w') as writer, open(block_matches) as block_f, open(matches) as matches_f:
-        blocks = []
-        matches = []
-        next(block_f) # skip header row
-        for block, match in tqdm(zip(block_f, matches_f)):
-            blocks.append(block.split(',')) # eg. [[2341351, 1351325], [12415131, 135135]]
-            matches.append(match)
-
-            if len(matches) == batch_size:
-                predict_batch(matches, model, tokenizer, blocks, writer)
-                blocks.clear()
-                matches.clear()
-        
-        if len(matches) > 0:
-            predict_batch(matches, model, blocks, writer)
+    candidates = pd.merge(block_matches, matches, left_index=True, right_index=True)
+    for i in tqdm(range(0, len(candidates), batch_size)):
+        batch_candidates = candidates[i:i+batch_size]
+        predict_batch(batch_candidates, model, tokenizer)
+    
+    return pd.DataFrame(match_results)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

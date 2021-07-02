@@ -6,8 +6,8 @@ from transformers import BertTokenizer, TFAutoModel
 import tensorflow as tf
 import os
 
-from ..utils.index import make_index
-from ..utils.gcs import download_from_gcs
+from utils.index import make_index
+from utils.gcs import download_from_gcs
 import tempfile
 
 def batch(iterable, n=1):

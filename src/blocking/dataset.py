@@ -1,8 +1,9 @@
 import torch
 from torch.utils.data import Dataset
 from sentence_transformers import InputExample
-from ..utils.utils import get_tokenizer
+from utils.utils import get_tokenizer
 import pandas as pd
+import numpy as np
 import os
 
 class SBertMatcherDataset(Dataset):
@@ -14,12 +15,11 @@ class SBertMatcherDataset(Dataset):
         """
         if type(dataset) == str:
             self.sents, self.labels = self.read_data(dataset)
-
-        elif type(dataset) == list:
+        else:
             self.sents = dataset
             self.labels = labels
         
-        if labels != None:
+        if labels is not None:
             assert len(self.sents) == len(self.labels), "Length of sents and labels don't match"
 
         self.lm = lm

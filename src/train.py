@@ -1,35 +1,36 @@
 import argparse
 
-from ..preprocessing.feature_extraction import make_features_index
-from ..preprocessing.batch_selection import batch_selection
-from ..preprocessing.serialize import serialize
-from ..trainer.model import create_keras_model
-from ..trainer.utils import make_dataset
+from .preprocessing.feature_extraction import make_features_index
+from .preprocessing.batch_selection import batch_selection
+from .preprocessing.serialize import serialize
+from .utils.utils import make_dataset
+from .utils.gcs import download_from_gcs, upload_blob, upload_local_directory_to_gcs
+from .susubert.train import create_bert_model
 
-from ..utils.gcs import download_from_gcs
 import tensorflow as tf
+from tensorflow.distribute import MirroredStrategy # pyright: reportMissingImports=false
 from sklearn.model_selection import train_test_split
 import os
 import tempfile
 import pandas as pd
 
+strategy = MirroredStrategy()
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         '--lm',
-        nargs='+',
         help='Language model',
         default='indobenchmark/indobert-base-p1')
     parser.add_argument(
         '--products',
-        nargs='+',
         help='Full products csv file',
         default='gs://food-id-app-kubeflowpipelines-default/susubert/sku.csv')
     parser.add_argument(
-        '--master-products',
+        '--col-features',
         nargs='+',
-        help='Master product csv file',
-        default='gs://food-id-app-kubeflowpipelines-default/susubert/sku.csv')
+        help='Features used for bert training',
+        default=['name', 'price'])
     parser.add_argument(
         '--job-dir',
         type=str,
@@ -60,22 +61,28 @@ if __name__ == '__main__':
     tf.io.gfile.makedirs(DATA_DIR)
 
     products_fname = os.path.join(DATA_DIR, 'products.csv')
-    master_products_fname = os.path.join(DATA_DIR, 'master_products.csv')
+    serialized_match_fname = os.path.join(DATA_DIR, 'match.serialized.csv')
+    model_dir = os.path.join(DATA_DIR, 'susubert-model/')
 
     download_from_gcs(gcs_url=args.products, fname=products_fname)
-    download_from_gcs(gcs_url=args.master_products, fname=master_products_fname)
 
     products = pd.read_csv(products_fname)
     index = make_features_index(args.lm, products)
 
     match_df = batch_selection(products, index)
-    serialized_match_df = serialize(match_df, products, keep_columns=['name', 'price'])
+    serialized_match_df = serialize(match_df, products, keep_columns=args.col_features)
+    serialized_match_df.to_csv(serialized_match_fname)
+    upload_blob(os.path.join(args.job_dir, 'matches.serialized.csv'), serialized_match_fname)
 
     train, test = train_test_split(serialized_match_df, test_size=0.2)
     test, val = train_test_split(test, test_size=0.5)
+    
+    with strategy.scope():
+        model, tokenizer = create_bert_model(args.lm, args.learning_rate)
 
-    model, tokenizer = create_keras_model(args.lm, args.learning_rate)
-
+    print(f"Train set count: {len(train)}")
+    print(f"Val set count: {len(val)}")
+    print(f"Test set count: {len(test)}")
     train_dataset = make_dataset(train, tokenizer)
     val_dataset = make_dataset(val, tokenizer)
     test_dataset = make_dataset(test, tokenizer)
@@ -88,8 +95,7 @@ if __name__ == '__main__':
     print(f"<============= Test evaluation =============>")
     model.evaluate(test_dataset.batch(args.batch_size), return_dict=True, batch_size=args.batch_size)
 
-    model.save_pretrained(args.job_dir + '/susubert_model')
+    model.save_pretrained(model_dir)
 
-
-
+    upload_local_directory_to_gcs(model_dir, os.path.join(args.job_dir, 'susubert-model/'))
 

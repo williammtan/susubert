@@ -5,11 +5,12 @@
 
 import pandas as pd
 import argparse
+from tqdm import tqdm
 
 def serialize_products(products, features):
     serialized = []
-    for i, match in products.iterrows():
-        serialized_matches = ' '.join(['COL ' + col + ' VAL ' + match[col] for col in features])
+    for i, match in tqdm(products.iterrows()):
+        serialized_matches = ' '.join(['COL ' + col + ' VAL ' + str(match[col]) for col in features])
 
         serialized.append(serialized_matches)
     
@@ -17,7 +18,7 @@ def serialize_products(products, features):
 
 def serialize_matches(matches, features):
     serialized = []
-    for i, match in matches.iterrows():
+    for i, match in tqdm(matches.iterrows()):
         serialized_matches = [' '.join(['COL ' + col + ' VAL ' + match[col+str(i)] for col in features]) for i in range(1,3)]
 
         serialized.append(serialized_matches)
@@ -26,12 +27,12 @@ def serialize_matches(matches, features):
 
 def serialize_product_matches(matches, products, features):
     """Serialize matches given a products matches"""
-    serialized = []
-    for i, match in matches.iterrows():
-        serialized_matches = [' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)]
+    serialized = [[' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)] for _, match in tqdm(matches.iterrows(), total=len(matches))]
+    # for i, match in tqdm(matches.iterrows()):
+    #     serialized_matches = [' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)]
         # serialized_matches = [products[products.id == match['id'+str(i)]]['name'].iloc[0] for i in range(1,3)]
 
-        serialized.append(serialized_matches)
+        # serialized.append(serialized_matches)
     
     return serialized
 

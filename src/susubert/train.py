@@ -18,6 +18,15 @@ def make_match_dataset(dataset_path, tokenizer):
     ))
     return dataset
 
+def create_bert_model(lm, lr):
+    model = TFAutoModelForSequenceClassification.from_pretrained(lm, num_labels=2)
+    tokenizer = AutoTokenizer.from_pretrained(lm)
+
+    optimizer = keras.optimizers.Adam(learning_rate=lr)
+    model.compile(optimizer=optimizer, loss=model.compute_loss, metrics=['accuracy']) # can also use any keras loss fn
+
+    return model, tokenizer
+
 def train(hp):
     """
     hp: Hyperparameters
@@ -29,8 +38,7 @@ def train(hp):
         - lr: learning rate
         - save: boolean to save model
     """
-    model = TFAutoModelForSequenceClassification.from_pretrained(hp.lm, num_labels=2)
-    tokenizer = AutoTokenizer.from_pretrained(hp.lm)
+    model, tokenizer = create_bert_model(hp.lm, hp.lr)
 
     train_dataset = make_match_dataset(hp.train_set, tokenizer)
     val_dataset = make_match_dataset(hp.val_set, tokenizer)
@@ -38,9 +46,6 @@ def train(hp):
 
 
     tensorboard_callback = keras.callbacks.TensorBoard(log_dir=hp.logdir)
-
-    optimizer = keras.optimizers.Adam(learning_rate=hp.lr)
-    model.compile(optimizer=optimizer, loss=model.compute_loss, metrics=['accuracy']) # can also use any keras loss fn
     model.fit(
         train_dataset.shuffle(len(train_dataset)).batch(hp.batch_size), epochs=hp.n_epochs, 
         batch_size=hp.batch_size, validation_data=val_dataset.shuffle(len(val_dataset)).batch(hp.batch_size),
