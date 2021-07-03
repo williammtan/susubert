@@ -8,7 +8,8 @@ def train_pipeline(
     products:'URI'='gs://ml_foodid_project/product-matching/pareto_training.csv'
 ):
     download_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/0795597562e076437a21745e524b5c960b1edb68/components/google-cloud/storage/download/component.yaml')
-    feature_extraction_op = load_component_from_file('feature_extraction/component.yaml')
+    feature_extraction_op = load_component_from_file('feature_extraction/component.yaml').set_gpu_limit(2)
+    feature_extraction_op.add_node_selector_constraint('cloud.google.com/gke-accelerator', 'nvidia-tesla-t4')  
 
     download_task = download_op(products)
 

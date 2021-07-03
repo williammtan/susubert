@@ -9,7 +9,7 @@ outputs:
 
 implementation:
   container:
-    image: gcr.io/food-id-app/susubert/feature-extraction@sha256:111f0daefe08cb658f8f0941d07bddbaf73058db0884a58be7d75060b61bb619
+    image: gcr.io/food-id-app/susubert/feature-extraction@sha256:ff032d03d80078ef16f81847b925a9a642d826dcb9de32abfc26a7be0ae902b7
     command: [
       python, feature_extraction.py,
 
