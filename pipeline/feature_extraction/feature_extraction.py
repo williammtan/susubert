@@ -38,7 +38,7 @@ def feature_extraction(model, tokenizer, sentences, batch_size=1000):
     
     return embedding
         
-def feature_extraction(model, products):
+def extract_features(model, products):
     tokenizer = BertTokenizer.from_pretrained(model)
     model = TFAutoModel.from_pretrained(model)
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     products = pd.read_csv(args.products)
-    index = feature_extraction(model=args.lm, products=products)
+    index = extract_features(model=args.lm, products=products)
 
     Path(args.save_index).parent.mkdir(parents=True, exists=True)
     index.save(args.save_index)
