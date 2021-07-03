@@ -1,0 +1,21 @@
+ame: Feature Extraction Function
+description: Uses pretrained LM to extract features from the name of a list of products
+
+inputs:
+- {name: LM, type: String, description: 'Huggingface language model'}
+- {name: Products, type: String, description: 'CSV file to products'}
+outputs:
+- {name: SaveIndex, type: LocalPath, description: 'Path to annoy index'}
+
+implementation:
+  container:
+    image: gcr.io/food-id-app/susubert/feature_extraction:latest
+    command: [
+      python, feature_extraction.py,
+
+      --lm, {inputValue, LM},
+
+      --products, {inputPath: Products},
+
+      --data, {outputPath: Data},
+    ]
