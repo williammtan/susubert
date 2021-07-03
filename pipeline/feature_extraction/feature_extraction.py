@@ -59,7 +59,7 @@ if __name__ == "__main__":
     parser.add_argument('--save-index', help='path to save index')
     args = parser.parse_args()
 
-    products = pd.read_csv(args.products).dropna(subset=['id'])
+    products = pd.read_csv(args.products).dropna(subset=['name'])
     index = extract_features(model=args.lm, products=products)
 
     Path(args.save_index).parent.mkdir(parents=True, exists=True)
