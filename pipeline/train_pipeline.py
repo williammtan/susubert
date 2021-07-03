@@ -9,11 +9,13 @@ def train_pipeline(
 ):
     download_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/0795597562e076437a21745e524b5c960b1edb68/components/google-cloud/storage/download/component.yaml')
     feature_extraction_op = load_component_from_file('feature_extraction/component.yaml') 
+    batch_selection_op = load_component_from_file('batch_selection/component.yaml')
 
     download_task = download_op(products)
 
     feature_extraction_task = feature_extraction_op(lm, download_task.output).set_gpu_limit(1)
-    # feature_extraction_task.add_node_selector_constraint('cloud.google.com/gke-accelerator', 'nvidia-tesla-t4')
+
+    batch_selection_task = batch_selection_op(download_task.output, feature_extraction_op.output)
 
 
 if __name__ == '__main__':

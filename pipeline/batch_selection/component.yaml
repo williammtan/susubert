@@ -9,9 +9,9 @@ outputs:
 
 implementation:
   container:
-    image: gcr.io/food-id-app/susubert/feature_extraction@sha256:86821274ebf5c161cde58a5aa20f23b953b4848bc5e10aefde36f6a4c7d2abe5
+    image: gcr.io/food-id-app/susubert/batch_selection@sha256:ef39090733e168b16b6b519b99db5ebf33cd1d4386f37a31ad90a99f48dafcd0
     command: [
-      python, feature_extraction.py,
+      python, batch_selection.py,
 
       --products, {inputPath: Products},
 
