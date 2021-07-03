@@ -12,7 +12,9 @@ def train_pipeline(
 
     download_task = download_op(products)
 
-    feature_extraction_op(lm, download_task.output)
+    feature_extraction_task = feature_extraction_op(lm, download_task.output).set_gpu_limit(1)
+    # feature_extraction_task.add_node_selector_constraint('cloud.google.com/gke-accelerator', 'nvidia-tesla-t4')
+
 
 if __name__ == '__main__':
     # kfp.compiler.Compiler().compile(train_pipeline, 'train_pipline.yaml')

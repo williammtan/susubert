@@ -62,5 +62,5 @@ if __name__ == "__main__":
     products = pd.read_csv(args.products).dropna(subset=['name'])
     index = extract_features(model=args.lm, products=products)
 
-    Path(args.save_index).parent.mkdir(parents=True, exists=True)
+    Path(args.save_index).parent.mkdir(parents=True)
     index.save(args.save_index)
