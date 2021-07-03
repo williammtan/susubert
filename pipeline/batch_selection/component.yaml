@@ -1,0 +1,21 @@
+name: Batch Selection Component
+description: Creates batches of match pairs for training
+
+inputs:
+- {name: Products, type: LocalPath, description: 'CSV file of products, requires the column `master_product`'}
+- {name: Index, type: LocalPath, description: 'Product index'}
+outputs:
+- {name: Matches, type: LocalPath, description: 'Path to save match pairs'}
+
+implementation:
+  container:
+    image: gcr.io/food-id-app/susubert/feature_extraction@sha256:86821274ebf5c161cde58a5aa20f23b953b4848bc5e10aefde36f6a4c7d2abe5
+    command: [
+      python, feature_extraction.py,
+
+      --products, {inputPath: Products},
+
+      --index, {inputPath: Index},
+
+      --matches-output, {outputPath: Matches},
+    ]
