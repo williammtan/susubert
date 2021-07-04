@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from itertools import combinations
 from annoy import AnnoyIndex
+from pathlib import Path
 from tqdm import tqdm
 
 
@@ -10,7 +11,7 @@ def negative_hard(products, index):
     """Selects most similar products with different master products"""
     master_products = products.master_product.unique()
 
-    for master in master_products:
+    for master in tqdm(master_products):
         offers = products[products.master_product == master] # offers in the master product
         search_size = round(len(offers) * 1.5)
         for i in offers.index:
@@ -29,7 +30,7 @@ def positive_all(products):
 
 def batch_selection(products, index):
     neg_matches = np.array(list(negative_hard(products, index)))
-    pos_matches = np.array(list(positive_all(products, index)))
+    pos_matches = np.array(list(positive_all(products)))
     matches = np.append(neg_matches, pos_matches, axis=0)
     matches.sort()
     matches = np.unique(matches, axis=1)
@@ -49,4 +50,6 @@ if __name__ == '__main__':
 
     products = pd.read_csv(args.products)
     matches = batch_selection(products, index)
+
+    Path(args.save_matches).parent.mkdir(parents=True)
     matches.to_csv(args.save_matches)

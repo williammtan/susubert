@@ -3,7 +3,7 @@ description: Uses pretrained LM to extract features from the name of a list of p
 
 inputs:
 - {name: LM, type: String, description: 'Huggingface language model'}
-- {name: Products, type: GCSPath, description: 'CSV file to products'}
+- {name: Products, description: 'CSV file to products'}
 outputs:
 - {name: SaveIndex, type: LocalPath, description: 'Path to annoy index'}
 

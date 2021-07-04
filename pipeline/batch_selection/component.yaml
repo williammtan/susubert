@@ -2,14 +2,14 @@ name: Batch Selection Component
 description: Creates batches of match pairs for training
 
 inputs:
-- {name: Products, type: LocalPath, description: 'CSV file of products, requires the column `master_product`'}
-- {name: Index, type: LocalPath, description: 'Product index'}
+- {name: Products, description: 'CSV file of products, requires the column `master_product`'}
+- {name: Index, description: 'Product index'}
 outputs:
 - {name: Matches, type: LocalPath, description: 'Path to save match pairs'}
 
 implementation:
   container:
-    image: gcr.io/food-id-app/susubert/batch_selection@sha256:ef39090733e168b16b6b519b99db5ebf33cd1d4386f37a31ad90a99f48dafcd0
+    image: gcr.io/food-id-app/susubert/batch_selection:latest
     command: [
       python, batch_selection.py,
 
@@ -17,5 +17,5 @@ implementation:
 
       --index, {inputPath: Index},
 
-      --matches-output, {outputPath: Matches},
+      --save-matches, {outputPath: Matches},
     ]

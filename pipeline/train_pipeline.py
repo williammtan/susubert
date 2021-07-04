@@ -1,6 +1,13 @@
 import kfp
 from kfp import dsl
-from kfp.components import load_component_from_url, load_component_from_file
+from kfp.components import func_to_container_op, load_component_from_url, load_component_from_file, OutputPath, InputPath
+
+def preprocess(input_path: InputPath(str), output_path: OutputPath(str)):
+    import pandas as pd
+    products = pd.read_csv(input_path)
+    products = products.dropna(subset=['id', 'name', 'description'])
+    products = products.dropna(subset=['master_product'])
+    products.to_csv(output_path, index=False)
 
 @dsl.pipeline(name='train pipeline')
 def train_pipeline(
@@ -8,14 +15,15 @@ def train_pipeline(
     products:'URI'='gs://ml_foodid_project/product-matching/pareto_training.csv'
 ):
     download_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/0795597562e076437a21745e524b5c960b1edb68/components/google-cloud/storage/download/component.yaml')
+    preprocess_op = func_to_container_op(func=preprocess, packages_to_install=['pandas'])
     feature_extraction_op = load_component_from_file('feature_extraction/component.yaml') 
     batch_selection_op = load_component_from_file('batch_selection/component.yaml')
 
     download_task = download_op(products)
+    preprocess_task = preprocess_op(download_task.output)
 
-    feature_extraction_task = feature_extraction_op(lm, download_task.output).set_gpu_limit(1)
-
-    batch_selection_task = batch_selection_op(download_task.output, feature_extraction_op.output)
+    feature_extraction_task = feature_extraction_op(lm, preprocess_task.output).set_gpu_limit(1)
+    batch_selection_task = batch_selection_op(preprocess_task.output, feature_extraction_task.output).set_gpu_limit(1)
 
 
 if __name__ == '__main__':
