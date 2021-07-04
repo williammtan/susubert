@@ -4,9 +4,9 @@ description: Serializes match pairs in [COL] [VAL] format
 inputs:
 - {name: Matches, description: 'CSV file to match pairs'}
 - {name: Products, description: 'CSV file to products'}
-- {name: KeepColumns, type: List, description: 'List of columns to include'}
+- {name: KeepColumns, type: JsonArray, description: 'List of columns to include'}
 outputs:
-- {name: SaveMatches, type: LocalPath, description: 'Path to save serialized match pairs'}
+- {name: SaveMatches, description: 'Path to save serialized match pairs'}
 
 implementation:
   container:
@@ -18,7 +18,7 @@ implementation:
 
       --products, {inputPath: Products},
 
-      --keep-columns, {inputValue: KeepColumns}
+      --keep-columns, {inputValue: KeepColumns},
 
       --save-matches, {outputPath: SaveMatches},
     ]
