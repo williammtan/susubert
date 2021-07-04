@@ -5,7 +5,7 @@ from .preprocessing.batch_selection import batch_selection
 from .preprocessing.serialize import serialize
 from .utils.utils import make_dataset
 from .utils.gcs import download_from_gcs, upload_blob, upload_local_directory_to_gcs
-from .susubert.train import create_bert_model
+from .susubert.model import create_bert_model
 
 import tensorflow as tf
 from tensorflow.distribute import MirroredStrategy # pyright: reportMissingImports=false
