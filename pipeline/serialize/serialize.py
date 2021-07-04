@@ -93,5 +93,5 @@ if __name__ == '__main__':
 
     serialized_matches = serialize(matches, products, json.loads(args.keep_columns))
 
-    Path(args.save_matches).parent.mkdir(parents=True)
-    serialized_matches.to_csv(args.save_matches)
+    Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
+    serialized_matches.to_csv(args.save_matches, index=False)

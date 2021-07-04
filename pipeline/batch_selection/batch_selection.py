@@ -51,5 +51,5 @@ if __name__ == '__main__':
     products = pd.read_csv(args.products)
     matches = batch_selection(products, index)
 
-    Path(args.save_matches).parent.mkdir(parents=True)
-    matches.to_csv(args.save_matches)
+    Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
+    matches.to_csv(args.save_matches, index=False)
