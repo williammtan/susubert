@@ -6,6 +6,8 @@
 import pandas as pd
 import argparse
 from tqdm import tqdm
+from pathlib import Path
+import json
 
 def serialize_products(products, features):
     serialized = []
@@ -82,12 +84,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--matches')
     parser.add_argument('--products')
-    parser.add_argument('--keep-columns', nargs='+', default=['name'])
+    parser.add_argument('--keep-columns')
     parser.add_argument('--save-matches')
     args = parser.parse_args()
 
     matches = pd.read_csv(args.matches)
     products = pd.read_csv(args.products)
 
-    serialized_matches = serialize(matches, products, args.keep_columns)
-    serialize_matches.to_csv(args.save_matches)
+    serialized_matches = serialize(matches, products, json.loads(args.keep_columns))
+
+    Path(args.save_matches).parent.mkdir(parents=True)
+    serialized_matches.to_csv(args.save_matches)
