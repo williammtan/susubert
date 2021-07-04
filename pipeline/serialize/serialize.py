@@ -88,8 +88,8 @@ if __name__ == '__main__':
     parser.add_argument('--save-matches')
     args = parser.parse_args()
 
-    matches = pd.read_csv(args.matches)
-    products = pd.read_csv(args.products)
+    matches = pd.read_csv(args.matches) if args.matches is not None else None
+    products = pd.read_csv(args.products) if args.products is not None else None
 
     serialized_matches = serialize(matches, products, json.loads(args.keep_columns))
 

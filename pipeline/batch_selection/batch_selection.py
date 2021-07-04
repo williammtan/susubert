@@ -29,13 +29,15 @@ def positive_all(products):
             yield (id1, id2)
 
 def batch_selection(products, index):
+    def make_df(matches, label):
+        matches.sort()
+        matches = np.unique(matches, axis=1)
+        return pd.DataFrame({'id1': matches[:, 0], 'id2': matches[:, 1], 'match': [label] * len(matches)})
+
     neg_matches = np.array(list(negative_hard(products, index)))
     pos_matches = np.array(list(positive_all(products)))
-    matches = np.append(neg_matches, pos_matches, axis=0)
-    matches.sort()
-    matches = np.unique(matches, axis=1)
 
-    matches = pd.DataFrame({'id1': matches[:, 0], 'id2': matches[:, 1]})
+    matches = pd.concat([make_df(neg_matches, 0), make_df(pos_matches, 1)])
     return matches
 
 if __name__ == '__main__':

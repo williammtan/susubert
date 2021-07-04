@@ -3,7 +3,8 @@
 .vscode/
 save/
 data/products.csv
-log
+**/log
+**/logs
 data/
 models/
 notebooks/out
