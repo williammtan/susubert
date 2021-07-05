@@ -11,7 +11,7 @@ outputs:
 
 implementation:
   container:
-    image: gcr.io/food-id-app/susubert/f
+    image: gcr.io/food-id-app/susubert/evaluate:latest
     command: [
       python, evaluate.py,
 
