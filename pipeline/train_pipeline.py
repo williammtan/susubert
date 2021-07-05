@@ -1,6 +1,7 @@
 import kfp
 from kfp import dsl
 from kfp.components import func_to_container_op, load_component_from_url, load_component_from_file
+import sys
 
 from utils import preprocess, train_test_split
 
@@ -41,6 +42,8 @@ def train_pipeline(
 
 
 if __name__ == '__main__':
-    # kfp.compiler.Compiler().compile(train_pipeline, 'train_pipline.yaml')
-    client = kfp.Client(host='https://118861cf2b92c13d-dot-us-central1.pipelines.googleusercontent.com')
-    client.create_run_from_pipeline_func(train_pipeline, arguments={'num_epochs':1})
+    if sys.argv[1] == 'compile':
+        kfp.compiler.Compiler().compile(train_pipeline, 'train_pipeline.yaml')
+    elif sys.argv[1] == 'run':
+        client = kfp.Client(host='https://118861cf2b92c13d-dot-us-central1.pipelines.googleusercontent.com')
+        client.create_run_from_pipeline_func(train_pipeline, arguments={'num_epochs':1})
