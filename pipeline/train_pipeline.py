@@ -30,9 +30,9 @@ def train_pipeline(
     preprocess_task = preprocess_op(download_task.output)
 
     # preprocessing
-    feature_extraction_task = feature_extraction_op(lm, preprocess_task.output).set_gpu_limit(1)
-    batch_selection_task = batch_selection_op(preprocess_task.output, feature_extraction_task.output).set_gpu_limit(1)
-    serialize_op = serialize_op(batch_selection_task.output, preprocess_task.output, keep_columns).set_gpu_limit(1)
+    feature_extraction_task = feature_extraction_op(lm, preprocess_task.outputs['master_products']).set_gpu_limit(1)
+    batch_selection_task = batch_selection_op(preprocess_task.outputs['master_products'], feature_extraction_task.output).set_gpu_limit(1)
+    serialize_op = serialize_op(batch_selection_task.output, preprocess_task.outputs['master_products'], keep_columns).set_gpu_limit(1)
     train_test_split_task = train_test_split_op(serialize_op.output)
 
     # training

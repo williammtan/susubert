@@ -1,11 +1,17 @@
 from kfp.components import OutputPath, InputPath
 
-def preprocess(input_path: InputPath(str), output_path: OutputPath(str)):
+def preprocess(input_path: InputPath(str), products_path: OutputPath(str), master_products_path: OutputPath(str)):
     import pandas as pd
+    from pathlib import Path
+
     products = pd.read_csv(input_path)
     products = products.dropna(subset=['id', 'name', 'description'])
-    products = products.dropna(subset=['master_product'])
-    products.to_csv(output_path, index=False)
+    master_products = products.dropna(subset=['master_product'])
+
+    Path(products_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(master_products_path).parent.mkdir(parents=True, exist_ok=True)
+    products.to_csv(products_path, index=False)
+    master_products.to_csv(master_products_path)
 
 def train_test_split(
     matches_path: InputPath('str'),
