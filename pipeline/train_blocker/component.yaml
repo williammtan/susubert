@@ -1,0 +1,29 @@
+name: Train Blocker
+description: Trains a S-BERT Model
+
+inputs:
+- {name: Matches, description: 'CSV file to serizalized match pairs'}
+- {name: LM, type: String, description: 'Hugginface language model'}
+- {name: BatchSize, type: Integer, description: 'Training batch size'}
+- {name: LearningRate, type: Float, description: 'Optimizer learning rate'}
+- {name: NumEpochs, type: Integer, description: 'Number of training epochs'}
+outputs:
+- {name: SaveModel, description: 'Path to save trained model'}
+implementation:
+  container:
+    image: gcr.io/food-id-app/susubert/train:latest
+    command: [
+      python, train.py,
+
+      --matches, {inputPath: Matches},
+
+      --lm, {inputValue: LM},
+
+      --lr, {inputValue: LearningRate},
+
+      --batch-size, {inputValue: BatchSize},
+
+      --n-epochs, {inputValue: NumEpochs},
+
+      --save-model, {outputPath: SaveModel},
+    ]
