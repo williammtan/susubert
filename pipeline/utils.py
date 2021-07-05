@@ -11,7 +11,7 @@ def preprocess(input_path: InputPath(str), products_path: OutputPath(str), maste
     Path(products_path).parent.mkdir(parents=True, exist_ok=True)
     Path(master_products_path).parent.mkdir(parents=True, exist_ok=True)
     products.to_csv(products_path, index=False)
-    master_products.to_csv(master_products_path)
+    master_products.to_csv(master_products_path, index=False)
 
 def train_test_split(
     matches_path: InputPath('str'),
