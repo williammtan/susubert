@@ -1,0 +1,27 @@
+name: Evaluate
+description: Evaluates the model on a test dataset
+
+inputs:
+- {name: Matches, description: 'CSV file to serizalized match pairs'}
+- {name: LM, type: String, description: 'Hugginface language model'}
+- {name: Model, description: 'Path to trained model'}
+- {name: BatchSize, type: Integer, description: 'Training batch size'}
+outputs:
+- {name: mlpipeline-ui-metadata}
+
+implementation:
+  container:
+    image: gcr.io/food-id-app/susubert/f
+    command: [
+      python, evaluate.py,
+
+      --matches, {inputPath: Matches},
+
+      --model, {inputPath: Model},
+
+      --lm, {inputValue: LM},
+
+      --batch-size, {inputValue: BatchSize},
+
+      --ml-pipeline-ui-metadata-path, {outputPath: mlpipeline-ui-metadata},
+    ]

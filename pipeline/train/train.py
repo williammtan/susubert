@@ -61,4 +61,4 @@ if __name__ == '__main__':
     train_matches, val_matches = train_test_split(matches, test_size=VAL_SPLIT)
 
     model = train(train_matches, val_matches, args)
-    model.save(args.save_model)
+    model.save_pretrained(args.save_model)
