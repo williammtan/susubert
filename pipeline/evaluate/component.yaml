@@ -23,5 +23,5 @@ implementation:
 
       --batch-size, {inputValue: BatchSize},
 
-      --ml-pipeline-ui-metadata-path, {outputPath: mlpipeline-ui-metadata},
+      --mlpipeline-ui-metadata-path, {outputPath: mlpipeline-ui-metadata},
     ]
