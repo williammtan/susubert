@@ -3,3 +3,4 @@ tqdm
 tensorflow
 transformers
 sklearn
+tensorboard

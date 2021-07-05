@@ -7,7 +7,7 @@ from utils import preprocess, train_test_split
 @dsl.pipeline(name='train pipeline')
 def train_pipeline(
     lm:str='indobenchmark/indobert-base-p1',
-    products:'URI'='gs://ml_foodid_project/product-matching/pareto_training.csv', # type: ignore
+    products:'URI'='gs://ml_foodid_project/product-matching/susubert/pareto_training.csv', # type: ignore
     keep_columns: list=['name', 'price'],
     batch_size: int=32,
     learning_rate: float=3e-5,
@@ -36,4 +36,4 @@ def train_pipeline(
 if __name__ == '__main__':
     # kfp.compiler.Compiler().compile(train_pipeline, 'train_pipline.yaml')
     client = kfp.Client(host='https://118861cf2b92c13d-dot-us-central1.pipelines.googleusercontent.com')
-    client.create_run_from_pipeline_func(train_pipeline, arguments={})
+    client.create_run_from_pipeline_func(train_pipeline, arguments={'num_epochs':2})

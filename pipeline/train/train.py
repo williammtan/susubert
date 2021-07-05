@@ -6,6 +6,7 @@
 import pandas as pd
 import argparse
 import json
+from pathlib import Path
 
 from tensorflow import keras
 import tensorflow as tf
@@ -39,12 +40,9 @@ def train(train_matches, val_matches, hp):
     train_dataset = make_dataset(train_matches, tokenizer)
     val_dataset = make_dataset(val_matches, tokenizer)
 
-    tensorboard_callback = tf.keras.callbacks.TensorBoard(log_dir=LOG_DIR)
-
     model.fit(
         train_dataset.shuffle(len(train_dataset)).batch(hp.batch_size), epochs=hp.n_epochs, 
         batch_size=hp.batch_size, validation_data=val_dataset.shuffle(len(val_dataset)).batch(hp.batch_size),
-        callbacks=[tensorboard_callback]
     )
 
     return model
@@ -57,7 +55,6 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float)
     parser.add_argument('--n-epochs', type=int)
     parser.add_argument('--save-model')
-    parser.add_argument('--tensorboard-metadata-path')
     args = parser.parse_args()
 
     matches = pd.read_csv(args.matches)
@@ -65,13 +62,3 @@ if __name__ == '__main__':
 
     model = train(train_matches, val_matches, args)
     model.save(args.save_model)
-
-    metadata = {
-        'outputs' : [{
-        'type': 'tensorboard',
-        'source': LOG_DIR,
-        }]
-    }
-
-    with open(args.tensorboard_metadata_path, 'w') as metadata_file:
-        json.dump(metadata, metadata_file)

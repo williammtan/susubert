@@ -9,7 +9,6 @@ inputs:
 - {name: NumEpochs, type: Integer, description: 'Number of training epochs'}
 outputs:
 - {name: SaveModel, description: 'Path to save trained model'}
-
 implementation:
   container:
     image: gcr.io/food-id-app/susubert/train:latest
