@@ -14,7 +14,7 @@ def match_pipeline(
 
     batch_size: int=32,
 
-    blocker_epochs: int=2,
+    blocker_epochs: int=1,
     blocker_learning_rate: float=2e-5,
     blocker_threshold: float=0.5,
     blocker_top_k: int=100,

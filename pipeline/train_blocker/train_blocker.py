@@ -26,7 +26,9 @@ def train_blocker(lm, train_matches, val_matches, args):
 
     val_evaluator = BinaryClassificationEvaluator(sentences1=val_matches.sent1.tolist(), sentences2=val_matches.sent2.tolist(), labels=val_matches.match.tolist())
 
-    model.fit(train_objectives=[(dataloader, loss_func)], epochs=args.n_epochs, evaluator=val_evaluator)
+    model.fit(train_objectives=[(dataloader, loss_func)], epochs=args.n_epochs)
+    accuracy = model.evaluate(evaluator=val_evaluator)
+    print(f"accuracy: {accuracy}")
 
     return model
 
