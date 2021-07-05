@@ -11,7 +11,7 @@ def train_pipeline(
     model_save: str='gs://ml_foodid_project/product-matching/susubert/pareto_model',
     keep_columns: list=['name', 'price'],
     batch_size: int=32,
-    learning_rate: float=3e-5,
+    learning_rate: float=2e-5,
     num_epochs: int=4
 ):
     download_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/0795597562e076437a21745e524b5c960b1edb68/components/google-cloud/storage/download/component.yaml')
@@ -36,7 +36,7 @@ def train_pipeline(
 
     # training
     train_task = train_op(train_test_split_task.outputs['train'], lm, batch_size, learning_rate, num_epochs).set_gpu_limit(1)
-    evaluate_task = evaluate_op(train_test_split_task.outputs['test'], lm, train_task.output, batch_size)
+    evaluate_task = evaluate_op(train_test_split_task.outputs['test'], lm, train_task.output, batch_size).set_gpu_limit(1)
     upload_task = upload_op(train_task.output, model_save)
 
 

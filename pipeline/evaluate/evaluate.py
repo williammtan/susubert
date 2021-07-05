@@ -44,7 +44,7 @@ if __name__ == '__main__':
     y_pred = evaluate(matches=matches, model=args.model, lm=args.lm, batch_size=args.batch_size)
 
     class_report = classification_report(matches.match.values, np.argmax(y_pred, axis=1))
-    markdown = "# Evaluation results \n " + class_report
+    markdown = f"# Evaluation results \n ```{class_report}```"
 
     metadata = {
         'outputs' : [
@@ -55,6 +55,6 @@ if __name__ == '__main__':
         }]
     }
 
-    Path(args.ml_pipeline_ui_metadata_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(args.mlpipeline_ui_metadata_path).parent.mkdir(parents=True, exist_ok=True)
     with open(args.mlpipeline_ui_metadata_path, 'w') as metadata_file:
         json.dump(metadata, metadata_file)
