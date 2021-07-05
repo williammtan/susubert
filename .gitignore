@@ -11,3 +11,4 @@ notebooks/out
 notebooks/runs
 notebooks/index
 **/test_data
+**/.env
