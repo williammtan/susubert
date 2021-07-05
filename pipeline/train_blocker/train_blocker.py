@@ -20,11 +20,11 @@ def create_sbert_model(lm, max_length=64):
 def train_blocker(lm, train_matches, val_matches, args):
     model = create_sbert_model(lm)
 
-    dataset = SBertMatcherDataset(np.array([train_matches.sent1, train_matches.sent2]).T, labels=train_matches.match, lm=lm)
+    dataset = SBertMatcherDataset(np.array([train_matches.sent1, train_matches.sent2]).T, labels=train_matches.match.values, lm=lm)
     dataloader = DataLoader(dataset, shuffle=True, batch_size=args.batch_size)
     loss_func = losses.CosineSimilarityLoss(model)
 
-    val_evaluator = BinaryClassificationEvaluator(sentences1=val_matches.name1.tolist(), val_matches=matches.name2.tolist(), labels=matches.match.tolist())
+    val_evaluator = BinaryClassificationEvaluator(sentences1=val_matches.sent1.tolist(), sentences2=val_matches.sent2.tolist(), labels=val_matches.match.tolist())
 
     model.fit(train_objectives=[(dataloader, loss_func)], epochs=args.n_epochs, evaluator=val_evaluator)
 

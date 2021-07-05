@@ -15,6 +15,7 @@ def match_pipeline(
     batch_size: int=32,
 
     blocker_epochs: int=2,
+    blocker_learning_rate: float=2e-5,
     blocker_threshold: float=0.5,
     blocker_top_k: int=100,
 
@@ -25,6 +26,7 @@ def match_pipeline(
     feature_extraction_op = load_component_from_file('feature_extraction/component.yaml') 
     batch_selection_op = load_component_from_file('batch_selection/component.yaml')
     serialize_op = load_component_from_file('serialize/component.yaml')
+    train_blocker_op = load_component_from_file('train_blocker/component.yaml')
     upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml')
 
     # download and simple preprocess
@@ -32,15 +34,16 @@ def match_pipeline(
     preprocess_task = preprocess_op(download_task.output)
 
     # preprocessing
-    feature_extraction_task = feature_extraction_op(lm, preprocess_task.output).set_gpu_limit(1)
-    batch_selection_task = batch_selection_op(preprocess_task.output, feature_extraction_task.output).set_gpu_limit(1)
-    serialize_op = serialize_op(batch_selection_task.output, preprocess_task.output, keep_columns).set_gpu_limit(1)
+    feature_extraction_task = feature_extraction_op(lm, preprocess_task.outputs['master_products']).set_gpu_limit(1)
+    batch_selection_task = batch_selection_op(preprocess_task.outputs['master_products'], feature_extraction_task.output).set_gpu_limit(1)
+    serialize_task = serialize_op(batch_selection_task.output, preprocess_task.outputs['master_products'], keep_columns).set_gpu_limit(1)
+    train_blocker_task = train_blocker_op(serialize_task.output, lm, batch_size, blocker_learning_rate, blocker_epochs).set_gpu_limit(1)
 
 
 
 if __name__ == '__main__':
     if sys.argv[1] == 'compile':
-        kfp.compiler.Compiler().compile(match_pipeline, 'train_pipeline.yaml')
+        kfp.compiler.Compiler().compile(match_pipeline, 'match_pipeline.yaml')
     elif sys.argv[1] == 'run':
         client = kfp.Client(host='https://118861cf2b92c13d-dot-us-central1.pipelines.googleusercontent.com')
         client.create_run_from_pipeline_func(match_pipeline, arguments={})

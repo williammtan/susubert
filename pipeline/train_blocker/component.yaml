@@ -11,9 +11,9 @@ outputs:
 - {name: SaveModel, description: 'Path to save trained model'}
 implementation:
   container:
-    image: gcr.io/food-id-app/susubert/train:latest
+    image: gcr.io/food-id-app/susubert/train_blocker:latest
     command: [
-      python, train.py,
+      python, train_blocker.py,
 
       --matches, {inputPath: Matches},
 
