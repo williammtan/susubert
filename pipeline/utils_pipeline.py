@@ -1,6 +1,10 @@
 import kfp 
 from kfp import dsl
 from kfp.components import create_component_from_func
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
 
 def gpu_check_op():
     return dsl.ContainerOp(
@@ -20,7 +24,7 @@ def ip_check_op():
 def connect_to_rds_op():
     import pandas as pd
     from sqlalchemy import create_engine
-    db_connection_str = '***REMOVED***'
+    db_connection_str = os.environ['sql_endpoint']
     db_connection = create_engine(db_connection_str)
     db_connection.connect()
     df = pd.read_sql('SELECT * FROM master_product_clusters', con=db_connection)
