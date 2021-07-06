@@ -75,8 +75,11 @@ def serialize(matches=None, products=None, keep_columns=['name', 'price']):
                 "sent2": sent2,
             })
 
-
     match_df = pd.DataFrame(match_df)
+
+    if matches is not None and 'id1' in matches.columns:
+        match_df = match_df.merge(matches['id1', 'id2'], left_index=True, right_index=True)
+
     return match_df
 
 
