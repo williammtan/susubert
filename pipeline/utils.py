@@ -31,3 +31,40 @@ def train_test_split(
     train.to_csv(train_path, index=False)
     test.to_csv(test_path, index=False)
 
+
+def fin(
+    matches_path: InputPath(str), 
+    products_path: InputPath(str), 
+    fin_path: OutputPath(str)
+    ):
+    from igraph import Graph
+    from pathlib import Path
+
+    import pandas as pd
+    import numpy as np
+
+    matches = pd.read_csv(matches_path)
+    products = pd.read_csv(products_path)
+
+    g = Graph()
+    g.add_vertices(len(products))
+
+    id_mapping = dict(zip(products.id, range(len(products))))
+    match_pairs = np.array([(id_mapping[match.id1], id_mapping[match.id2]) for _, match in matches.iterrows() if match.match == 1])
+    g.add_edges(match_pairs)
+
+    g.vs['id'] = products.id.values
+    g.vs['name'] = products.id.name
+
+    clusters = []
+    for i, c in enumerate(g.clusters()):
+        if len(c) > 2:
+            for p in c:
+                clusters.append({
+                    "id": g.vs[p].attributes()['id'],
+                    "cluster": i
+            })
+    clusters = pd.DataFrame(clusters)
+
+    Path(fin_path).parent.mkdir(parents=True, exist_ok=True)
+    clusters.to_csv(fin_path, index=False)

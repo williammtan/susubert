@@ -3,13 +3,13 @@ from kfp import dsl
 from kfp.components import func_to_container_op, load_component_from_url, load_component_from_file
 import sys
 
-from utils import preprocess
+from utils import preprocess, fin
 
 @dsl.pipeline(name='train pipeline')
 def match_pipeline(
     lm:str='indobenchmark/indobert-base-p1',
     products:'URI'='gs://ml_foodid_project/product-matching/susubert/pareto_training.csv', # type: ignore
-    model_save: 'URI'='gs://ml_foodid_project/product-matching/susubert/pareto_model/data', # type: ignore
+    model_save: 'URI'='gs://ml_foodid_project/product-matching/susubert/pareto_model/model', # type: ignore
     keep_columns: list=['name', 'price'],
 
     batch_size: int=32,
@@ -17,7 +17,7 @@ def match_pipeline(
     blocker_epochs: int=1,
     blocker_learning_rate: float=2e-5,
     blocker_threshold: float=0.5,
-    blocker_top_k: int=100,
+    blocker_top_k: int=2,
 
     match_threshold: float=0.8
 ):
@@ -29,6 +29,7 @@ def match_pipeline(
     train_blocker_op = load_component_from_file('train_blocker/component.yaml')
     blocker_op = load_component_from_file('blocker/component.yaml')
     matcher_op = load_component_from_file('matcher/component.yaml')
+    fin_op = func_to_container_op(func=fin, packages_to_install=['python-igraph', 'numpy', 'pandas'])
     upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml')
 
     # download and simple preprocess
@@ -49,6 +50,7 @@ def match_pipeline(
     # matching
     download_model_task = download_op(model_save)
     matcher_task = matcher_op(matches=serialize_blocker_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
+    fin_task = fin_op(matches=matcher_task.output, products=preprocess_task.outputs['products'])
 
 
 
