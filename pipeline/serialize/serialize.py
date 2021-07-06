@@ -82,14 +82,21 @@ def serialize(matches=None, products=None, keep_columns=['name', 'price']):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--matches')
-    parser.add_argument('--products')
+    parser.add_argument('--matches', required=True)
+    parser.add_argument('--products', required=True)
     parser.add_argument('--keep-columns')
     parser.add_argument('--save-matches')
     args = parser.parse_args()
 
-    matches = pd.read_csv(args.matches) if args.matches is not None else None
-    products = pd.read_csv(args.products) if args.products is not None else None
+    try:
+        matches = pd.read_csv(args.matches)
+    except pd.errors.EmptyDataError:
+        matches = None
+    
+    try:
+        products = pd.read_csv(args.products)
+    except pd.errors.EmptyDataError:
+        products = None
 
     serialized_matches = serialize(matches, products, json.loads(args.keep_columns))
 
