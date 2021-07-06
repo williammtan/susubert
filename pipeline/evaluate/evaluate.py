@@ -23,10 +23,10 @@ def make_dataset(df, tokenizer):
     ))
 
 def evaluate(matches, model, lm, batch_size):
-    model, tokenizer = create_bert_model(args.model, args.lm)
+    model, tokenizer = create_bert_model(model, lm)
 
     dataset = make_dataset(matches, tokenizer)
-    y_pred = model.predict(dataset.batch(args.batch_size), batch_size=batch_size).logits
+    y_pred = model.predict(dataset.batch(batch_size), batch_size=batch_size).logits
 
     return y_pred
 
