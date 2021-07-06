@@ -36,7 +36,8 @@ def train_test_split(
 def fin(
     matches_path: InputPath(str), 
     products_path: InputPath(str), 
-    fin_path: OutputPath(str)
+    fin_path: OutputPath(str),
+    min_cluster_size: int=3
     ):
     from igraph import Graph
     from pathlib import Path
@@ -58,13 +59,15 @@ def fin(
     g.vs['name'] = products.id.name
 
     clusters = []
-    for i, c in enumerate(g.clusters()):
-        if len(c) > 2:
+    cluster_i = 0
+    for c in g.clusters():
+        if len(c) > min_cluster_size:
             for p in c:
                 clusters.append({
                     "id": g.vs[p].attributes()['id'],
-                    "cluster": i
+                    "cluster": cluster_i
             })
+            cluster_i += 1
     clusters = pd.DataFrame(clusters)
 
     Path(fin_path).parent.mkdir(parents=True, exist_ok=True)
