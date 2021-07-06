@@ -1,0 +1,29 @@
+name: Matcher
+description: Predicts matches using the BERT model
+
+inputs:
+- {name: Matches, description: 'CSV file to serizalized match pairs'}
+- {name: LM, type: String, description: 'Hugginface language model'}
+- {name: Model, description: 'Path to trained model'}
+- {name: BatchSize, type: Integer, description: 'Training batch size'}
+- {name: Threshold, type: Float, description: 'Threshold to classify as a match'}
+outputs:
+- {name: SaveMatches, description: 'Path to save predicted matches'}
+implementation:
+  container:
+    image: gcr.io/food-id-app/susubert/matcher:latest
+    command: [
+      python, matcher.py,
+
+      --matches, {inputPath: Matches},
+
+      --lm, {inputValue: LM},
+
+      --model, {inputPath: Model},
+
+      --batch-size, {inputValue: BatchSize},
+
+      --threshold, {inputValue: Threshold},
+
+      --save-matches, {outputPath: SaveMatches}
+    ]

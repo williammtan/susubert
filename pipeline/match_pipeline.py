@@ -9,7 +9,7 @@ from utils import preprocess
 def match_pipeline(
     lm:str='indobenchmark/indobert-base-p1',
     products:'URI'='gs://ml_foodid_project/product-matching/susubert/pareto_training.csv', # type: ignore
-    model_save: str='gs://ml_foodid_project/product-matching/susubert/pareto_model',
+    model_save: 'URI'='gs://ml_foodid_project/product-matching/susubert/pareto_model/data', # type: ignore
     keep_columns: list=['name', 'price'],
 
     batch_size: int=32,
@@ -28,6 +28,7 @@ def match_pipeline(
     serialize_op = load_component_from_file('serialize/component.yaml')
     train_blocker_op = load_component_from_file('train_blocker/component.yaml')
     blocker_op = load_component_from_file('blocker/component.yaml')
+    matcher_op = load_component_from_file('matcher/component.yaml')
     upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml')
 
     # download and simple preprocess
@@ -43,6 +44,11 @@ def match_pipeline(
     # blocking
     train_blocker_task = train_blocker_op(serialize_task.output, lm, batch_size, blocker_learning_rate, blocker_epochs).set_gpu_limit(1)
     blocker_task = blocker_op(preprocess_task.outputs['products'], serialize_products_task.output, train_blocker_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
+    serialize_blocker_task = serialize_op(matches=blocker_task.output, products=preprocess_task.outputs['products'], keepcolumns=keep_columns).set_gpu_limit(1)
+
+    # matching
+    download_model_task = download_op(model_save)
+    matcher_task = matcher_op(matches=serialize_blocker_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
 
 
 
