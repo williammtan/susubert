@@ -29,7 +29,7 @@ def matcher(matches, model, args):
     logits = softmax(logits).numpy()
 
     probabilities = logits[:, 1]
-    predictions = probabilities > args.threshold
+    predictions = (probabilities > args.threshold).astype(int)
 
     match_results = pd.DataFrame({'id1': matches.id1.values, 'id2': matches.id2.values, 'match': predictions, 'prob': probabilities})
     return match_results
