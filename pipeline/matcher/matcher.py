@@ -49,4 +49,4 @@ if __name__ == '__main__':
     match_results = matcher(matches, args.model, args)
 
     Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
-    match_results.to_csv(args.save_matches)
+    match_results.to_csv(args.save_matches, index=False)

@@ -85,4 +85,4 @@ if __name__ == '__main__':
     matches = blocker(sbert, products, args)
 
     Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
-    matches.to_csv(args.save_matches)
+    matches.to_csv(args.save_matches, index=False)
