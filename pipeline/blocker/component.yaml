@@ -1,0 +1,29 @@
+name: Blocker
+description: Blocks possible combinations of matches
+
+inputs:
+- {name: Products, description: 'CSV file to products'}
+- {name: SerializedProducts, description: 'CSV file to serialized products'}
+- {name: SbertModel, description: 'Path to s-bert model'}
+- {name: TopK, type: Integer, description: 'Top K neighbours to search'}
+- {name: Threshold, type: Float, description: 'Threshold for blocking'}
+outputs:
+- {name: SaveMatches, description: 'Path to save trained model'}
+implementation:
+  container:
+    image: gcr.io/food-id-app/susubert/blocker:latest
+    command: [
+      python, blocker.py,
+
+      --products, {inputPath: Products},
+
+      --serialized-products, {inputPath: SerializedProducts},
+
+      --s-bert, {inputPath: SbertModel},
+
+      --top-k, {inputValue: TopK},
+
+      --threshold, {inputValue: Threshold},
+
+      --save-matches, {outputPath: SaveMatches},
+    ]

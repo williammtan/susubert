@@ -27,6 +27,7 @@ def match_pipeline(
     batch_selection_op = load_component_from_file('batch_selection/component.yaml')
     serialize_op = load_component_from_file('serialize/component.yaml')
     train_blocker_op = load_component_from_file('train_blocker/component.yaml')
+    blocker_op = load_component_from_file('blocker/component.yaml')
     upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml')
 
     # download and simple preprocess
@@ -36,8 +37,12 @@ def match_pipeline(
     # preprocessing
     feature_extraction_task = feature_extraction_op(lm, preprocess_task.outputs['master_products']).set_gpu_limit(1)
     batch_selection_task = batch_selection_op(preprocess_task.outputs['master_products'], feature_extraction_task.output).set_gpu_limit(1)
-    serialize_task = serialize_op(batch_selection_task.output, preprocess_task.outputs['master_products'], keep_columns).set_gpu_limit(1)
+    serialize_task = serialize_op(matches=batch_selection_task.output, products=preprocess_task.outputs['master_products'], keepcolumns=keep_columns).set_gpu_limit(1)
+    serialize_products_task = serialize_op(matches='', products=preprocess_task.outputs['products'], keepcolumns=keep_columns).set_gpu_limit(1)
+
+    # blocking
     train_blocker_task = train_blocker_op(serialize_task.output, lm, batch_size, blocker_learning_rate, blocker_epochs).set_gpu_limit(1)
+    blocker_task = blocker_op(preprocess_task.outputs['products'], serialize_products_task.output, train_blocker_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
 
 
 
