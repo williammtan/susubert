@@ -17,9 +17,10 @@ def match_pipeline(
     blocker_epochs: int=1,
     blocker_learning_rate: float=2e-5,
     blocker_threshold: float=0.5,
-    blocker_top_k: int=2,
+    blocker_top_k: int=50,
 
-    match_threshold: float=0.8
+    match_threshold: float=0.8,
+    match_save: str='gs://ml_foodid_project/product-matching/susubert/pareto_training_results.csv' # type: ignore
 ):
     download_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/0795597562e076437a21745e524b5c960b1edb68/components/google-cloud/storage/download/component.yaml')
     preprocess_op = func_to_container_op(func=preprocess, packages_to_install=['pandas'])
@@ -51,6 +52,8 @@ def match_pipeline(
     download_model_task = download_op(model_save)
     matcher_task = matcher_op(matches=serialize_blocker_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
     fin_task = fin_op(matches=matcher_task.output, products=preprocess_task.outputs['products'])
+    upload_task = upload_op(fin_task.output, match_save)
+
 
 
 
