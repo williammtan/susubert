@@ -1,10 +1,11 @@
 from kfp.components import OutputPath, InputPath
+import os
 
 def preprocess(input_path: InputPath(str), products_path: OutputPath(str), master_products_path: OutputPath(str)):
     import pandas as pd
     from pathlib import Path
 
-    products = pd.read_csv(input_path)
+    products = pd.read_csv(input_path).drop_duplicates(subset='id')
     products = products.dropna(subset=['id', 'name', 'description'])
     master_products = products.dropna(subset=['master_product'])
 
@@ -68,3 +69,20 @@ def fin(
 
     Path(fin_path).parent.mkdir(parents=True, exist_ok=True)
     clusters.to_csv(fin_path, index=False)
+
+
+def query_rds(
+    save_query_path: OutputPath(str),
+    query: str='SELECT * FROM master_product_clusters'
+    ):
+    from sqlalchemy import create_engine
+    from pathlib import Path
+    import pandas as pd
+
+    db_connection_str = os.environ['sql_endpoint']
+    db_connection = create_engine(db_connection_str)
+    db_connection.connect()
+    df = pd.read_sql(query, con=db_connection)
+
+    Path(save_query_path).parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(save_query_path, index=False)
