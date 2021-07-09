@@ -1,6 +1,10 @@
 from kfp.components import OutputPath, InputPath
+from kfp.v2.dsl import component
 import os
 
+@component(
+    packages_to_install=['pandas']
+)
 def preprocess(input_path: InputPath(str), products_path: OutputPath(str), master_products_path: OutputPath(str)):
     import pandas as pd
     from pathlib import Path
@@ -14,6 +18,9 @@ def preprocess(input_path: InputPath(str), products_path: OutputPath(str), maste
     products.to_csv(products_path, index=False)
     master_products.to_csv(master_products_path, index=False)
 
+@component(
+    packages_to_install=['pandas', 'sklearn']
+)
 def train_test_split(
     matches_path: InputPath('str'),
     train_path: OutputPath(str),
@@ -32,7 +39,9 @@ def train_test_split(
     train.to_csv(train_path, index=False)
     test.to_csv(test_path, index=False)
 
-
+@component(
+    packages_to_install=['python-igraph', 'numpy', 'pandas']
+)
 def fin(
     matches_path: InputPath(str), 
     products_path: InputPath(str), 
@@ -73,7 +82,9 @@ def fin(
     Path(fin_path).parent.mkdir(parents=True, exist_ok=True)
     clusters.to_csv(fin_path, index=False)
 
-
+@component(
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql']
+)
 def query_rds(
     save_query_path: OutputPath(str),
     query: str='SELECT * FROM master_product_clusters'
@@ -90,6 +101,9 @@ def query_rds(
     Path(save_query_path).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(save_query_path, index=False)
 
+@component(
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql']
+)
 def save_to_rds(
     dataframe_path: InputPath(str),
     table: str,
@@ -106,6 +120,9 @@ def save_to_rds(
     df = pd.read_csv(dataframe_path)
     df.to_sql(table, db_connection, schema='food', if_exists=if_exists, index=index)
 
+@component(
+    packages_to_install=['pandas']
+)
 def drop_cache_matches(
     blocked_matches_path: InputPath(str),
     cached_matches_path: InputPath(str),
@@ -120,6 +137,9 @@ def drop_cache_matches(
 
     match_candidates.to_csv(match_candidates_path, index=False)
 
+@component(
+    packages_to_install=['pandas']
+)
 def merge_cache_matches(
     matches_path: InputPath(str),
     cached_matches_path: InputPath(str),
@@ -133,6 +153,9 @@ def merge_cache_matches(
     Path(matches_output_path).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(matches_output_path, index=False)
 
+@component(
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql']
+)
 def save_clusters(
     clusters_path: InputPath(str),
     products_path: InputPath(str)
@@ -186,7 +209,9 @@ def save_clusters(
     df_mph = df_mph.rename(columns={"id":"master_product_cluster_id", "master_product_status_id":"previous_status_id"})
     df_mph.to_sql("master_product_status_histories", db_connection, schema="food", if_exists="append", index=False)
 
-
+@component(
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'google-cloud-storage']
+)
 def download_model(
     model_id: int,
     model_save: OutputPath(str)
