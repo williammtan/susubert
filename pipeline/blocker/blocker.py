@@ -42,6 +42,11 @@ def blocker(sbert, products, args):
                 same = np.logical_and(same, same_prods[col] == target_prod[col])
         same_prods = same_prods[same]
 
+        if target_prod.master_product is not None:
+            # either the master product is None or the master products are equal
+            either = np.logical_or(same_prods.master_product.notnull(), same_prods.master_product == target_prod.master_product)
+        same_prods = same_prods[either]
+
         return same_prods
 
 
