@@ -187,3 +187,22 @@ def save_clusters(
     df_mph.to_sql("master_product_status_histories", db_connection, schema="food", if_exists="append", index=False)
 
 
+def download_model(
+    model_id: int,
+    model_save: OutputPath(str)
+    ):
+    from sqlalchemy import create_engine
+    from google.cloud import storage
+    import pandas as pd
+    import re
+
+    db_connection_str = os.environ['sql_endpoint']
+    db_connection = create_engine(db_connection_str)
+    db_connection.connect()
+
+    model_blob = pd.read_sql(f"SELECT * FROM ml_models WHERE id = {model_id}").blob
+    
+    storage_client = storage.Client()
+    bucket = storage_client.bucket(re.search(r'gs://(.*)/', model_blob).group(1))
+    blob = bucket.blob(model_blob)
+    blob.download_to_filename(model_save)
