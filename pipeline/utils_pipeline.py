@@ -4,6 +4,8 @@ from kfp.components import create_component_from_func
 from dotenv import load_dotenv
 import os
 
+from utils import query_rds
+
 load_dotenv()
 
 def gpu_check_op():
@@ -36,8 +38,8 @@ def connect_to_rds_op():
 def gpu_pipeline():
     gpu_check = gpu_check_op()
     ip_check = ip_check_op()
-    connect_to_rds = create_component_from_func(func=connect_to_rds_op, packages_to_install=['pandas', 'SQLAlchemy', 'pymysql'])()
+    query_rds_task = query_rds()
 
 if __name__ == '__main__':
-    client = kfp.Client(host='https://118861cf2b92c13d-dot-us-central1.pipelines.googleusercontent.com')
+    client = kfp.Client(host='https://2db1ee630a900d84-dot-us-central1.pipelines.googleusercontent.com')
     client.create_run_from_pipeline_func(gpu_pipeline, arguments={})
