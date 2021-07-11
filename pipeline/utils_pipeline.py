@@ -36,10 +36,10 @@ def connect_to_rds_op():
     name='GPU check',
 )
 def gpu_pipeline():
-    gpu_check = gpu_check_op()
     ip_check = ip_check_op()
-    query_rds_task = query_rds()
+    ip_check_op().after(ip_check)
+    query_rds().after(ip_check)
 
 if __name__ == '__main__':
-    client = kfp.Client(host='https://2db1ee630a900d84-dot-us-central1.pipelines.googleusercontent.com')
+    client = kfp.Client(host='https://2286482f38de0564-dot-us-central1.pipelines.googleusercontent.com')
     client.create_run_from_pipeline_func(gpu_pipeline, arguments={})

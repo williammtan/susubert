@@ -43,7 +43,7 @@ def match_pipeline(
     blocker_task = blocker_op(re_task.output, serialize_products_task.output, download_sbert_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
 
     if cache_matches_table is not None:
-        query_cache_matches = query_rds(query=f"SELECT * FROM {cache_matches_table} WHERE model_id = {model_id}") # find matches where the model is the inputted model
+        query_cache_matches = query_rds(query=f"SELECT product_source_id_1 as id1, product_source_id_2 as id2, `match`, prob FROM food.{cache_matches_table} WHERE model_id = {model_id}") # find matches where the model is the inputted model
         drop_cache_task = drop_cache_matches(blocked_matches=blocker_task.output, cached_matches=query_cache_matches.output)
         serialize_matches_task = serialize_op(matches=drop_cache_task.output, products=re_task.output, keepcolumns=keep_columns).set_gpu_limit(1)
     else:
@@ -64,5 +64,5 @@ if __name__ == '__main__':
     if sys.argv[1] == 'compile':
         kfp.compiler.Compiler().compile(match_pipeline, 'match_pipeline.yaml')
     elif sys.argv[1] == 'run':
-        client = kfp.Client(host='https://179674cc98257dcd-dot-us-central1.pipelines.googleusercontent.com')
-        client.create_run_from_pipeline_func(match_pipeline, arguments={})
+        client = kfp.Client(host='https://2286482f38de0564-dot-us-central1.pipelines.googleusercontent.com')
+        client.create_run_from_pipeline_func(match_pipeline, arguments={"blocker_threshold": 0.25, "blocker_top_k": 100})

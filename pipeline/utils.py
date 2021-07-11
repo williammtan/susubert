@@ -168,7 +168,7 @@ def fin(
     import pandas as pd
     import numpy as np
 
-    matches = pd.read_csv(matches_path)
+    matches = pd.read_csv(matches_path).dropna()
     products = pd.read_csv(products_path)
 
     g = Graph()
@@ -237,7 +237,7 @@ def save_to_rds(
     df.to_sql(table, db_connection, schema='food', if_exists=if_exists, index=index)
 
 @_component(
-    packages_to_install=['pandas']
+    packages_to_install=['pandas', 'numpy']
 )
 def drop_cache_matches(
     blocked_matches_path: InputPath(str),
@@ -245,11 +245,12 @@ def drop_cache_matches(
     match_candidates_path: OutputPath(str)
     ):
     import pandas as pd
+    import numpy as np
 
     matches = pd.read_csv(blocked_matches_path)
-    cached_matches = pd.read_csv(cached_matches_path)
+    cached_matches = pd.read_csv(cached_matches_path)[['id1', 'id2']]
 
-    match_candidates = matches[~matches.isin(cached_matches)] # find matches that have NOT been cached
+    match_candidates = pd.merge(matches, cached_matches, how='inner') # find matches that have NOT been cached
 
     match_candidates.to_csv(match_candidates_path, index=False)
 
@@ -288,13 +289,14 @@ def save_clusters(
 
     query_rds = lambda query: pd.read_sql(query, con=db_connection)
 
-    # load master products and clusters
-    df_mpc = query_rds("SELECT * FROM food.master_product_clusters WHERE master_product_status_id != 4") # select all mpc that are in use
-
     # merge products with clusters
     products = pd.read_csv(products_path)
-    df_cls = pd.read_csv(clusters_path).merge(products[['id', 'name', 'master_product']], how='left', on='id')
-    df_cls.drop_duplicates(subset="id", inplace=True)
+    try:
+        df_cls = pd.read_csv(clusters_path).merge(products[['id', 'name', 'master_product']], how='left', on='id')
+        df_cls.drop_duplicates(subset="id", inplace=True)
+    except pd.errors.EmptyDataError:
+        print('no match data, passing')
+        return
 
     # add statuses
     df_cls["master_product_status_id"] = 1 # unnamed cluster
@@ -305,25 +307,23 @@ def save_clusters(
     df_cls = df_cls[["cluster_id", "product_source_id", "master_product_id", "master_product_status_id"]]
 
     # change status of all the mpcs
-    # stmt = (
-    #     update('master_product_clusters')
-    #     .values(master_product_status_id=4) # set all mpcs to NOT USED
-    # )
-    # with db_connection.begin() as conn:
-    #     conn.execute(stmt) # run update query
+    df_mpc = query_rds("SELECT * FROM food.master_product_clusters")[["cluster_id", "product_source_id", "master_product_id", "master_product_status_id"]] # select all mpc
 
-    # append to db
-    # df_cls.to_sql("master_product_clusters", db_connection, schema="food", if_exists="append", index=False)
-    print(df_cls)
-
-    # add to mp history
-    df_mph_current = df_mpc[['id', 'master_product_status_id']]
+    df_mph_current = df_mpc[df_mpc.master_product_status_id != 4][['id', 'master_product_status_id']] # WHERE master_product_status_id != 4
     df_mph_current["current_status_id"] = 4 # changed old clusters status id from UNNAMED OR NAMED CLUSTER to NOT USED
 
-    df_mph_new = pd.read_sql(f"SELECT id, master_product_status_id ORDER BY created_at DESC LIMIT {len(df_cls)}", con=db_connection)
+    df_mpc['master_product_status_id'] = 4 # set all products to NOT IN USE
+    df_mpc_update = pd.concat([df_mpc, df_cls])
+    print(df_mpc_update)
+
+    # append to db
+    # df_mpc_update.to_sql("master_product_clusters", db_connection, schema="food", if_exists="replace", index=False)
+
+    # add to mp history
+    df_mph_new = query_rds(f"SELECT id, master_product_status_id FROM master_product_clusters ORDER BY created_at DESC LIMIT {len(df_cls)}")
     df_mph_new['current_status_id'] = df_mph_new["master_product_status_id"] # don't change status, meaning added new clusters
 
-    df_mph = pd.concat([df_mph_new, df_mph_new])
+    df_mph = pd.concat([df_mph_current, df_mph_new])
     df_mph = df_mph.rename(columns={"id":"master_product_cluster_id", "master_product_status_id":"previous_status_id"})
     # df_mph.to_sql("master_product_status_histories", db_connection, schema="food", if_exists="append", index=False)
     print(df_mph)
@@ -373,7 +373,7 @@ def save_cache_matches(cache_matches: InputPath(str), model_id):
     db_connection = create_engine(db_connection_str)
     db_connection.connect()
 
-    matches = pd.read_csv(cache_matches).rename({'id1': 'product_source_id_1', 'id2': 'product_source_id_2'})
+    matches = pd.read_csv(cache_matches).rename(columns={'id1': 'product_source_id_1', 'id2': 'product_source_id_2'})
     matches['model_id'] = model_id
 
     matches.to_sql('matches_cache', db_connection, schema="food", if_exists='append', index=False)
