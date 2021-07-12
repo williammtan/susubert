@@ -42,5 +42,5 @@ if __name__ == '__main__':
     if sys.argv[1] == 'compile':
         kfp.compiler.Compiler().compile(train_pipeline, 'train_pipeline.yaml')
     elif sys.argv[1] == 'run':
-        client = kfp.Client(host='https://118861cf2b92c13d-dot-us-central1.pipelines.googleusercontent.com')
+        client = kfp.Client(host='https://2286482f38de0564-dot-us-central1.pipelines.googleusercontent.com')
         client.create_run_from_pipeline_func(train_pipeline, arguments={'num_epochs':1})
