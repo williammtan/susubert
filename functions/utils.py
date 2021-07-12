@@ -19,19 +19,19 @@ def add_model_db(con_db, blob, tag):
     model_df.to_sql('ml_models', con=con_db, schema='food', if_exists='append', index=False)
 
     # make other models with susubert tag Not in_use
-    stmt = (
-        update('ml_models')
-        .where(tag='susubert')
-        .values(in_use=False)
-    )
+    sql_query = """
+        UPDATE food.ml_models as m
+        SET m.in_use=False
+        WHERE tag = `susubert`
+    """
     with con_db.begin() as conn:
-                conn.execute(stmt) # run update query
+        conn.execute(sql_query) # run update query
     
     # return id, since it is auto increment, the id is the len + 1
-    return get_len(con_db, 'SELECT * FROM ml_models') + 1
+    return get_len('SELECT * FROM ml_models', con_db) + 1
 
-def get_len(con_db, query):
-    count_df = pd.read_sql(query, con_db)
+def get_len(query, con_db):
+    count_df = pd.read_sql(query, con=con_db)
     return count_df.iloc[0]['count']
 
 def get_secret(secret='rds-sql-endpoint'):
