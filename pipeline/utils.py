@@ -197,7 +197,7 @@ def fin(
     clusters.to_csv(fin_path, index=False)
 
 @_component(
-    packages_to_install=['sqlalchemy', 'pandas', 'pymysql']
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'requests']
 )
 def query_rds(
     save_query_path: OutputPath(str),
@@ -205,8 +205,11 @@ def query_rds(
     ):
     from sqlalchemy import create_engine
     from pathlib import Path
+    import requests
     import pandas as pd
     import os
+
+    print(requests.get('http://httpbin.org/ip').text)
 
     db_connection_str = os.environ['SQL_ENDPOINT']
     db_connection = create_engine(db_connection_str)
@@ -306,18 +309,20 @@ def save_clusters(
     df_cls = df_cls.rename(columns={"id":"product_source_id", "cluster":"cluster_id", "master_product": "master_product_id"})
     df_cls = df_cls[["cluster_id", "product_source_id", "master_product_id", "master_product_status_id"]]
 
-    # change status of all the mpcs
-    df_mpc = query_rds("SELECT * FROM food.master_product_clusters")[["cluster_id", "product_source_id", "master_product_id", "master_product_status_id"]] # select all mpc
+    # change status of all the current mpcs to NOT USED
+    df_mpc = query_rds("SELECT * FROM food.master_product_clusters")[['id', 'master_product_status_id']] # select mpcs
+    df_mph_current = df_mpc[df_mpc.master_product_status_id != 4] # WHERE master_product_status_id != 4
+    df_mph_current["current_status_id"] = 4
 
-    df_mph_current = df_mpc[df_mpc.master_product_status_id != 4][['id', 'master_product_status_id']] # WHERE master_product_status_id != 4
-    df_mph_current["current_status_id"] = 4 # changed old clusters status id from UNNAMED OR NAMED CLUSTER to NOT USED
-
-    df_mpc['master_product_status_id'] = 4 # set all products to NOT IN USE
-    df_mpc_update = pd.concat([df_mpc, df_cls])
-    print(df_mpc_update)
+    sql = """
+        UPDATE master_product_clusters AS mpc
+        SET mpc.master_product_status_id = 4
+    """
+    with db_connection.begin() as conn:
+        conn.execute(sql)
 
     # append to db
-    # df_mpc_update.to_sql("master_product_clusters", db_connection, schema="food", if_exists="replace", index=False)
+    df_cls.to_sql("master_product_clusters", db_connection, schema="food", if_exists="append", index=False)
 
     # add to mp history
     df_mph_new = query_rds(f"SELECT id, master_product_status_id FROM master_product_clusters ORDER BY created_at DESC LIMIT {len(df_cls)}")
@@ -325,8 +330,7 @@ def save_clusters(
 
     df_mph = pd.concat([df_mph_current, df_mph_new])
     df_mph = df_mph.rename(columns={"id":"master_product_cluster_id", "master_product_status_id":"previous_status_id"})
-    # df_mph.to_sql("master_product_status_histories", db_connection, schema="food", if_exists="append", index=False)
-    print(df_mph)
+    df_mph.to_sql("master_product_status_histories", db_connection, schema="food", if_exists="append", index=False)
 
 @_component(
     packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'google-cloud-storage']
