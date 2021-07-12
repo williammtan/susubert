@@ -23,6 +23,8 @@ def negative_hard(products, index):
 
 def positive_all(products):
     id_combinations = np.array(list(combinations(products.id.values, 2)))
+    print(products)
+    print(id_combinations)
     for id1, id2 in tqdm(id_combinations):
         match = 1 if products[products.id == id1].master_product.iloc[0] == products[products.id == id2].master_product.iloc[0] else 0
         if match:
@@ -36,6 +38,8 @@ def batch_selection(products, index):
 
     neg_matches = np.array(list(negative_hard(products, index)))
     pos_matches = np.array(list(positive_all(products)))
+    print(pos_matches)
+    print(neg_matches)
 
     matches = pd.concat([make_df(neg_matches, 0), make_df(pos_matches, 1)])
     return matches

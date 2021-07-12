@@ -12,3 +12,4 @@ notebooks/runs
 notebooks/index
 **/test_data
 **/.env*
+*_pipeline.yaml
