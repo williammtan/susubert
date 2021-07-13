@@ -12,13 +12,16 @@ def _component(func: Optional[Callable] = None,
               *,
               base_image: Optional[str] = None,
               packages_to_install: List[str] = None,
-              output_component_file: Optional[str] = None):
+              output_component_file: Optional[str] = None,
+              cache_staleness: Optional[str]=None
+              ):
     
     if func is None:
         return functools.partial(_component,
                                 base_image=base_image,
                                 packages_to_install=packages_to_install,
-                                output_component_file=output_component_file)
+                                output_component_file=output_component_file,
+                                cache_staleness=cache_staleness)
     
    
 
@@ -30,9 +33,18 @@ def _component(func: Optional[Callable] = None,
 
     if 'sqlalchemy' in packages_to_install:
         def env_wrapper(*args, **kwargs):
-            return comp(*args, **kwargs).add_env_variable(V1EnvVar(name="SQL_ENDPOINT", value=os.environ['SQL_ENDPOINT']))
+            comp_op = comp(*args, **kwargs).add_env_variable(V1EnvVar(name="SQL_ENDPOINT", value=os.environ['SQL_ENDPOINT']))
+            if cache_staleness:
+                comp_op.execution_options.caching_strategy.max_cache_staleness = cache_staleness
+            return comp_op
 
         return env_wrapper
+    elif cache_staleness:
+        def cache_wrapper(*args, **kwargs):
+            comp_op = comp(*args, **kwargs)
+            comp_op.execution_options.caching_strategy.max_cache_staleness = cache_staleness
+        
+        return cache_wrapper
 
     return comp
 
@@ -197,7 +209,8 @@ def fin(
     clusters.to_csv(fin_path, index=False)
 
 @_component(
-    packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'requests']
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'requests'],
+    cache_staleness='P0D' # never cache queries
 )
 def query_rds(
     save_query_path: OutputPath(str),
@@ -220,7 +233,8 @@ def query_rds(
     df.to_csv(save_query_path, index=False)
 
 @_component(
-    packages_to_install=['sqlalchemy', 'pandas', 'pymysql']
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql'],
+    cache_staleness='P0D' # never cache saving
 )
 def save_to_rds(
     dataframe_path: InputPath(str),
