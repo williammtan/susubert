@@ -27,6 +27,8 @@ def match_pipeline(
     cache_matches_table: str="matches_cache",
 ):
     """This pipeline will block matches and predict product matches (using cache) to create clusters."""
+    if cache_matches_table == '':
+        cache_matches_table = None
 
     serialize_op = load_component_from_file('serialize/component.yaml')
     blocker_op = load_component_from_file('blocker/component.yaml')
@@ -44,6 +46,8 @@ def match_pipeline(
 
     if cache_matches_table is not None:
         query_cache_matches = query_rds(query=f"SELECT product_source_id_1 as id1, product_source_id_2 as id2, `match`, prob FROM food.{cache_matches_table} WHERE model_id = {model_id}") # find matches where the model is the inputted model
+        query_cache_matches.execution_options.caching_strategy.max_cache_staleness = "P0D"
+
         drop_cache_task = drop_cache_matches(blocked_matches=blocker_task.output, cached_matches=query_cache_matches.output)
         serialize_matches_task = serialize_op(matches=drop_cache_task.output, products=re_task.output, keepcolumns=keep_columns).set_gpu_limit(1)
     else:

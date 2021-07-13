@@ -46,7 +46,12 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     matches = pd.read_csv(args.matches)
-    match_results = matcher(matches, args.model, args)
+    if not matches.empty:
+        match_results = matcher(matches, args.model, args)
 
-    Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
-    match_results.to_csv(args.save_matches, index=False)
+        Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
+        match_results.to_csv(args.save_matches, index=False)
+    else:
+        Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
+        open(args.save_matches, 'w')
+        print('empty match candidates, skipping')

@@ -13,7 +13,7 @@ def train_pipeline(
     keep_columns: list=['name', 'price'],
     batch_size: int=32,
     learning_rate: float=2e-5,
-    num_epochs: int=4
+    num_epochs: int=2
 ):
     feature_extraction_op = load_component_from_file('feature_extraction/component.yaml') 
     batch_selection_op = load_component_from_file('batch_selection/component.yaml')

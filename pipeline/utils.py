@@ -253,7 +253,8 @@ def drop_cache_matches(
     matches = pd.read_csv(blocked_matches_path)
     cached_matches = pd.read_csv(cached_matches_path)[['id1', 'id2']]
 
-    match_candidates = pd.merge(matches, cached_matches, how='inner') # find matches that have NOT been cached
+    common_matches = pd.merge(matches, cached_matches, how='inner') # find matches in both matches and cached
+    match_candidates = matches[~matches.id1.isin(common_matches.id1)&matches.id1.isin(common_matches.id1)]
 
     match_candidates.to_csv(match_candidates_path, index=False)
 
@@ -268,9 +269,12 @@ def merge_cache_matches(
     import pandas as pd
     from pathlib import Path
 
-    matches = pd.read_csv(matches_path)
     cached_mataches = pd.read_csv(cached_matches_path)
-    df = pd.concat([matches, cached_mataches])
+    try:
+        matches = pd.read_csv(matches_path)
+        df = pd.concat([matches, cached_mataches])
+    except pd.errors.EmptyDataError:
+        df = cached_mataches
 
     Path(matches_output_path).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(matches_output_path, index=False)
@@ -311,12 +315,13 @@ def save_clusters(
 
     # change status of all the current mpcs to NOT USED
     df_mpc = query_rds("SELECT * FROM food.master_product_clusters")[['id', 'master_product_status_id']] # select mpcs
-    df_mph_current = df_mpc[df_mpc.master_product_status_id != 4] # WHERE master_product_status_id != 4
-    df_mph_current["current_status_id"] = 4
+    df_mph_current = df_mpc[df_mpc.master_product_status_id != 4 & df_mpc.master_product_status_id != 2] # WHERE master_product_status_id != 4 OR != 2
+    df_mph_current["current_status_id"] = 4 # convert all but clusters to NOT USED
 
     sql = """
         UPDATE master_product_clusters AS mpc
         SET mpc.master_product_status_id = 4
+        WHERE mpc.master_product_status_id != 2
     """
     with db_connection.begin() as conn:
         conn.execute(sql)
@@ -377,7 +382,15 @@ def save_cache_matches(cache_matches: InputPath(str), model_id):
     db_connection = create_engine(db_connection_str)
     db_connection.connect()
 
-    matches = pd.read_csv(cache_matches).rename(columns={'id1': 'product_source_id_1', 'id2': 'product_source_id_2'})
-    matches['model_id'] = model_id
+    current_cached_matches = pd.read_sql('SELECT * FROM food.matches_cache', db_connection)
 
-    matches.to_sql('matches_cache', db_connection, schema="food", if_exists='append', index=False)
+    try:
+        matches = pd.read_csv(cache_matches).rename(columns={'id1': 'product_source_id_1', 'id2': 'product_source_id_2'})
+        matches['model_id'] = model_id
+        matches = pd.concat(current_cached_matches, matches)
+    except pd.errors.EmptyDataError:
+        matches = current_cached_matches
+
+    matches = matches.drop_duplicates(how='all')
+
+    matches.to_sql('matches_cache', db_connection, schema="food", if_exists='replace', index=False)
