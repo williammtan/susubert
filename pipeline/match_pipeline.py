@@ -27,8 +27,6 @@ def match_pipeline(
     cache_matches_table: str="matches_cache",
 ):
     """This pipeline will block matches and predict product matches (using cache) to create clusters."""
-    if cache_matches_table == '':
-        cache_matches_table = None
 
     serialize_op = load_component_from_file('serialize/component.yaml')
     blocker_op = load_component_from_file('blocker/component.yaml')

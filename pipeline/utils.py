@@ -329,7 +329,7 @@ def save_clusters(
 
     # change status of all the current mpcs to NOT USED
     df_mpc = query_rds("SELECT * FROM food.master_product_clusters")[['id', 'master_product_status_id']] # select mpcs
-    df_mph_current = df_mpc[df_mpc.master_product_status_id != 4 & df_mpc.master_product_status_id != 2] # WHERE master_product_status_id != 4 OR != 2
+    df_mph_current = df_mpc[df_mpc.master_product_status_id.isin([1,3])] # WHERE master_product_status_id != 4 OR != 2
     df_mph_current["current_status_id"] = 4 # convert all but clusters to NOT USED
 
     sql = """
@@ -396,7 +396,7 @@ def save_cache_matches(cache_matches: InputPath(str), model_id):
     db_connection = create_engine(db_connection_str)
     db_connection.connect()
 
-    current_cached_matches = pd.read_sql('SELECT * FROM food.matches_cache', db_connection)
+    current_cached_matches = pd.read_sql(f'SELECT * FROM food.matches_cache WHERE model_id = {model_id}', db_connection)
 
     try:
         matches = pd.read_csv(cache_matches).rename(columns={'id1': 'product_source_id_1', 'id2': 'product_source_id_2'})
@@ -405,6 +405,6 @@ def save_cache_matches(cache_matches: InputPath(str), model_id):
     except pd.errors.EmptyDataError:
         matches = current_cached_matches
 
-    matches = matches.drop_duplicates(how='all')
+    matches = matches.drop_duplicates(subset=['id1', 'id2'])
 
     matches.to_sql('matches_cache', db_connection, schema="food", if_exists='replace', index=False)
