@@ -33,16 +33,21 @@ def _component(func: Optional[Callable] = None,
 
     if 'sqlalchemy' in packages_to_install:
         def env_wrapper(*args, **kwargs):
+            cache_overide = kwargs.get('cache') != False
+            kwargs.pop('cache', None)
             comp_op = comp(*args, **kwargs).add_env_variable(V1EnvVar(name="SQL_ENDPOINT", value=os.environ['SQL_ENDPOINT']))
-            if cache_staleness:
+            if cache_staleness and cache_overide:
                 comp_op.execution_options.caching_strategy.max_cache_staleness = cache_staleness
             return comp_op
 
         return env_wrapper
     elif cache_staleness:
         def cache_wrapper(*args, **kwargs):
+            cache_overide = kwargs.get('cache') != False
+            kwargs.pop('cache', None)
             comp_op = comp(*args, **kwargs)
-            comp_op.execution_options.caching_strategy.max_cache_staleness = cache_staleness
+            if cache_overide:
+                comp_op.execution_options.caching_strategy.max_cache_staleness = cache_staleness
         
         return cache_wrapper
 
