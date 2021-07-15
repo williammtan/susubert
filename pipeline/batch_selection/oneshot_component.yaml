@@ -5,7 +5,7 @@ inputs:
 - {name: Products, description: 'CSV file of products, requires the column `master_product`'}
 - {name: Index, description: 'Product index'}
 outputs:
-- {name: Matches, type: LocalPath, description: 'Path to save match pairs'}
+- {name: Matches, description: 'Path to save match pairs'}
 
 implementation:
   container:

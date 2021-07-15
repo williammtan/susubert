@@ -21,7 +21,8 @@ def batch_selection(products, index):
             "sent2": prod.master_product,
             "match": 1
         })
-    matches = pd.DataFrame(matches)
+    matches = pd.DataFrame(matches).dropna()
+    return matches
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
