@@ -9,16 +9,16 @@ def batch_selection(products, index):
     matches = []
     for i, prod in tqdm(products.iterrows()):
         nn = index.get_nns_by_item(i, 10)
-        nn = [n for n in nn if products[products.index == n].iloc[0].master_product != prod.master_product]
+        nn = [n for n in nn if products[products.index == n].iloc[0].master_product_base != prod.master_product_base]
         for idx in nn:
             matches.append({
                 "sent1": prod['name'],
-                "sent2": products.iloc[idx].master_product,
+                "sent2": products.iloc[idx].master_product_base,
                 "match": 0
             })
         matches.append({
             "sent1": prod['name'],
-            "sent2": prod.master_product,
+            "sent2": prod.master_product_base,
             "match": 1
         })
     matches = pd.DataFrame(matches).dropna()

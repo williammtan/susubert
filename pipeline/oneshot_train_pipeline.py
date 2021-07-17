@@ -3,19 +3,18 @@ from kfp import dsl
 from kfp.components import load_component_from_url, load_component_from_file
 import sys
 
-from utils import preprocess, train_test_split, query_rds
+from utils import download_model, preprocess, train_test_split, query_rds
 
 @dsl.pipeline(name='oneshot train pipeline')
 def oneshot_train_pipeline(
     lm:str='indobenchmark/indobert-base-p1',
-    product_query:str="""SELECT product_source_id as id, prod.name, prod.description, prod.weight, prod.price, prod.main_category, prod.sub_category, mp.name as master_product, mp.id as master_product_id
+    product_query:str="""SELECT product_source_id as id, prod.name, prod.description, prod.weight, prod.price, prod.main_category, prod.sub_category, mpc.master_product_id
     FROM food.master_product_clusters mpc
     LEFT JOIN food.external_temp_products_pareto prod ON prod.id_source = mpc.product_source_id
-    LEFT JOIN food.master_products mp ON mpc.master_product_id = mp.id
     WHERE master_product_status_id = 2""",
 
+    pretrain_model: int=9,
     model_save: str='gs://ml_foodid_project/product-matching/susubert/oneshot_model',
-    keep_columns: list=['name', 'price'],
     batch_size: int=32,
     learning_rate: float=2e-5,
     num_epochs: int=4
@@ -24,10 +23,10 @@ def oneshot_train_pipeline(
     batch_selection_op = load_component_from_file('batch_selection/oneshot_component.yaml')
     train_op = load_component_from_file('train/component.yaml')
     evaluate_op = load_component_from_file('evaluate/component.yaml')
-    upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml')
+    upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/master/components/google-cloud/google_cloud_pipeline_components/experimental/storage/upload_to_explicit_uri/component.yaml')
 
     # download and simple preprocess
-    query_op = query_rds(query=product_query, cache=False)
+    query_op = query_rds(query=product_query)
     preprocess_task = preprocess(query_op.output)
 
     # preprocessing
@@ -36,7 +35,8 @@ def oneshot_train_pipeline(
     train_test_split_task = train_test_split(batch_selection_task.output)
 
     # training
-    train_task = train_op(train_test_split_task.outputs['train'], lm, batch_size, learning_rate, num_epochs).set_gpu_limit(1)
+    download_model_op = download_model(pretrain_model)
+    train_task = train_op(matches=train_test_split_task.outputs['train'], lm=lm, model=download_model_op.output, batchsize=batch_size, learningrate=learning_rate, numepochs=num_epochs).set_gpu_limit(1)
     evaluate_task = evaluate_op(train_test_split_task.outputs['test'], lm, train_task.output, batch_size).set_gpu_limit(1)
     upload_task = upload_op(train_task.output, model_save)
 

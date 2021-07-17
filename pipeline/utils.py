@@ -66,19 +66,44 @@ def connect_db():
 
 
 @_component(
-    packages_to_install=['pandas']
+    packages_to_install=['pandas', 'sqlalchemy', 'pymysql']
 )
 def preprocess(input_path: InputPath(str), products_path: OutputPath(str), master_products_path: OutputPath(str)):
-    import pandas as pd
+    from sqlalchemy import create_engine
     from pathlib import Path
+    import pandas as pd
+    import os
+
+    db_connection_str = os.environ['SQL_ENDPOINT']
+    db_connection = create_engine(db_connection_str)
+    db_connection.connect()
 
     products = pd.read_csv(input_path).drop_duplicates(subset='id')
     products = products.dropna(subset=['id', 'name', 'description'])
 
-    if 'master_product' in products.columns:
+    if 'master_product_id' in products.columns:
+        def re_display_unit(mp):
+            string = ''
+            if mp.quantity != 0:
+                string += f' {int(mp.quantity)} x'
+            if mp.volume != 0:
+                volume = int(mp.volume) if round(mp.volume) == mp.volume else mp.volume
+                string += f' {int(mp.volume)} {mp.uom}'
+            elif mp.weight != 0:
+                weight = int(mp.weight) if round(mp.weight) == mp.weight else mp.weight
+                string += f' {int(mp.weight)} {mp.uom}'
+            return string
+
+        master_products = pd.read_sql('SELECT id, name, description, weight, volume, quantity, uom FROM master_products WHERE is_deleted = 0', db_connection)
+        master_products['display_unit'] = master_products.apply(re_display_unit, axis=1)
+        master_products['base'] = master_products.apply(lambda x: x['name'].replace(x.display_unit, ''), axis=1)
+        print(master_products.name)
+        print(master_products[['id', 'name', 'base']].rename(columns={'id': 'master_product_id', 'name': 'master_product', 'base': 'master_product_base'}).info())
+
+        products = products.merge(master_products[['id', 'name', 'base']].rename(columns={'id': 'master_product_id', 'name': 'master_product', 'base': 'master_product_base'}), how='left', on='master_product_id')
+
         Path(master_products_path).parent.mkdir(parents=True, exist_ok=True)
-        master_products = products.dropna(subset=['master_product'])
-        master_products.to_csv(master_products_path, index=False)
+        products.dropna(subset=['master_product']).to_csv(master_products_path, index=False)
     else:
         open(master_products_path, 'w')
 
@@ -413,3 +438,25 @@ def save_cache_matches(cache_matches: InputPath(str), model_id):
     matches = matches.drop_duplicates(subset=['id1', 'id2'])
 
     matches.to_sql('matches_cache', db_connection, schema="food", if_exists='replace', index=False)
+
+@_component(
+    packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'google-cloud-storage']
+)
+def generate_fin_suggestions(matches_path: InputPath(str), products_path: InputPath(str)):
+    from sqlalchemy import create_engine
+    import pandas as pd
+    import os
+
+    db_connection_str = os.environ['SQL_ENDPOINT']
+    db_connection = create_engine(db_connection_str)
+    db_connection.connect()
+
+    matches = pd.read_csv(matches_path)
+    matches = matches[matches.match == 1]
+    matches = matches.rename({'id1': 'product_id', 'id2': 'master_product_id'})[['product_id', 'master_product_id']]
+    matches['is_removed'] = 0
+    matches['created_by'] = 0
+    matches['updated_by'] = 0
+
+    matches.to_sql('product_fins', db_connection, schema='food', if_exists='replace', index=False)
+

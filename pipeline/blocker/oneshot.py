@@ -20,23 +20,23 @@ def index_sbert(sbert, sents):
     return index
 
 def blocker(sbert, products, args):
-    index = index_sbert(sbert, products.sent.values)
+    index = index_sbert(sbert, products.name.values)
     only_masters = products[products.master_product.notnull()]
     master_products = only_masters.master_product.unique()
 
     candid_matches = []
     for i, prod in tqdm(products.iterrows()):
         nn = index.get_nns_by_item(i, 100)
-        nn = [n for n in nn if n in only_masters.index][:10]
+        nn = [n for n in nn if n in only_masters.index][:args.top_k]
         for idx in nn:
-            mp = products.iloc[idx].master_product
+            mp = products.iloc[idx]
             candid_matches.append({
                 "id1": prod.id,
-                "id2": np.where(master_products == mp)[0][0],
+                "id2": mp.master_product_id,
                 "sent1": prod['name'],
-                "sent2": mp,
+                "sent2": mp.master_product,
             })
-    candid_matches = pd.DataFrame(candid_matches)
+    candid_matches = pd.DataFrame(candid_matches).drop_duplicates(subset=['id1', 'id2'])
     candid_matches = candid_matches.dropna(subset=['sent1', 'sent2'])
     return candid_matches
 

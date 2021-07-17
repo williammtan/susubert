@@ -5,7 +5,7 @@
 
 import pandas as pd
 import argparse
-import json
+import torch
 from pathlib import Path
 
 from tensorflow import keras
@@ -17,12 +17,18 @@ from sklearn.model_selection import train_test_split
 VAL_SPLIT=0.1 # TODO: make this a parameter
 LOG_DIR = 'logs/'
 
-def create_bert_model(lm, lr):
-    model = TFAutoModelForSequenceClassification.from_pretrained(lm, num_labels=2)
+def create_bert_model(lm, lr, model_path):
+    if model_path != '': 
+        print('using pretrained model path')
+        model = TFAutoModelForSequenceClassification.from_pretrained(model_path, num_labels=2, from_pt=True)
+    else:
+        print('not using pretrained model')
+        model = TFAutoModelForSequenceClassification.from_pretrained(lm, num_labels=2)
+
     tokenizer = AutoTokenizer.from_pretrained(lm)
 
     optimizer = keras.optimizers.Adam(learning_rate=lr)
-    model.compile(optimizer=optimizer, loss=model.compute_loss, metrics=['accuracy']) # can also use any keras loss fn
+    model.compile(optimizer=optimizer, loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy']) # can also use any keras loss fn
 
     return model, tokenizer
 
@@ -34,7 +40,7 @@ def make_dataset(df, tokenizer):
     ))
 
 def train(train_matches, val_matches, hp):
-    model, tokenizer = create_bert_model(hp.lm, hp.lr)
+    model, tokenizer = create_bert_model(hp.lm, hp.lr, model_path=hp.model)
     print(model.summary())
 
     train_dataset = make_dataset(train_matches, tokenizer)
@@ -51,6 +57,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--matches')
     parser.add_argument('--lm')
+    parser.add_argument('--model', required=False, default='')
     parser.add_argument('--batch-size', type=int)
     parser.add_argument('--lr', type=float)
     parser.add_argument('--n-epochs', type=int)

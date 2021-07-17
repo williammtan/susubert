@@ -4,6 +4,7 @@ description: Trains a BertForSequenceClassification model
 inputs:
 - {name: Matches, description: 'CSV file to serizalized match pairs'}
 - {name: LM, type: String, description: 'Hugginface language model'}
+- {name: Model, optional: True, default: '', description: 'Pretrained model'}
 - {name: BatchSize, type: Integer, description: 'Training batch size'}
 - {name: LearningRate, type: Float, description: 'Optimizer learning rate'}
 - {name: NumEpochs, type: Integer, description: 'Number of training epochs'}
@@ -18,6 +19,8 @@ implementation:
       --matches, {inputPath: Matches},
 
       --lm, {inputValue: LM},
+
+      --model, {inputPath: Model},
 
       --lr, {inputValue: LearningRate},
 
