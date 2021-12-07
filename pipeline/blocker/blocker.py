@@ -10,6 +10,7 @@ from sentence_transformers import SentenceTransformer
 
 EITHER_COLUMNS = ['volume', 'weight']
 SAME_COLUMNS = ['quantity']
+DIFFERENT_COLUMNS = ['outlet_id']
 
 def index_sbert(sbert, sents):
     embeddings = sbert.encode(sents, convert_to_numpy=True)
@@ -40,6 +41,14 @@ def blocker(sbert, products, args):
                 same = same_prods[col] == target_prod[col]
             else:
                 same = np.logical_and(same, same_prods[col] == target_prod[col])
+        same_prods = same_prods[same]
+
+        different = None
+        for col in DIFFERENT_COLUMNS:
+            if different is None:
+                different = same_prods[col] != target_prod[col]
+            else:
+                different = np.logical_and(different, different[col] != target_prod[col])
         same_prods = same_prods[same]
 
         # if 'master_product' in products.columns:
