@@ -20,7 +20,10 @@ LOG_DIR = 'logs/'
 def create_bert_model(lm, lr, model_path):
     if model_path != '': 
         print('using pretrained model path')
-        model = TFAutoModelForSequenceClassification.from_pretrained(model_path, num_labels=2)
+        try:
+            model = TFAutoModelForSequenceClassification.from_pretrained(model_path, num_labels=2)
+        except Exception:
+            model = TFAutoModelForSequenceClassification.from_pretrained(lm, num_labels=2)
     else:
         print('not using pretrained model')
         model = TFAutoModelForSequenceClassification.from_pretrained(lm, num_labels=2)
