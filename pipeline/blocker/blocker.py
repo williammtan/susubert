@@ -49,7 +49,7 @@ def blocker(sbert, products, args):
                 different = same_prods[col] != target_prod[col]
             else:
                 different = np.logical_and(different, different[col] != target_prod[col])
-        same_prods = same_prods[same]
+        same_prods = same_prods[different]
 
         # if 'master_product' in products.columns:
         #     if target_prod.master_product is not None:
