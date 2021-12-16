@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 
 def index_sbert(sbert, sents):
     embeddings = sbert.encode(sents, convert_to_numpy=True)
-    index = IndexFlatL2(embeddings)
+    index = IndexFlatL2(np.array(embeddings).astype(np.float32))
 
     return index
 
