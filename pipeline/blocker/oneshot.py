@@ -25,7 +25,7 @@ def blocker(sbert, products, args):
     master_products = only_masters.master_product.unique()
 
     candid_matches = []
-    for i, prod in tqdm(products.iterrows()):
+    for i, prod in tqdm(products[products.master_product.isnull()].iterrows()):
         nn = index.get_nns_by_item(i, 100)
         nn = [n for n in nn if n in only_masters.index][:args.top_k]
         for idx in nn:
