@@ -3,6 +3,7 @@ description: Blocks possible combinations of product, master product matches
 
 inputs:
 - {name: Products, description: 'CSV file to products'}
+- {name: MasterProducts, description: 'CSV file to master products'}
 - {name: SbertModel, description: 'Path to s-bert model'}
 - {name: TopK, type: Integer, description: 'Top K neighbours to search'}
 - {name: Threshold, type: Float, description: 'Threshold for blocking'}
@@ -15,6 +16,8 @@ implementation:
       python, oneshot.py,
 
       --products, {inputPath: Products},
+
+      --master-products, {inputPath: MasterProducts},
 
       --s-bert, {inputPath: SbertModel},
 

@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import math
 from pathlib import Path
-from annoy import AnnoyIndex
+from faiss import IndexFlatL2
 
 from sentence_transformers import SentenceTransformer
 
@@ -12,22 +12,20 @@ from sentence_transformers import SentenceTransformer
 
 def index_sbert(sbert, sents):
     embeddings = sbert.encode(sents, convert_to_numpy=True)
-    index = AnnoyIndex(768)
-    for i, vec in tqdm(enumerate(embeddings)):
-        index.add_item(i, vec)
-    index.build(10)
+    index = IndexFlatL2(embeddings)
 
     return index
 
-def blocker(sbert, products, args):
-    index = index_sbert(sbert, products.name.values)
+def blocker(sbert, products, master_products, args):
+    index = index_sbert(sbert, master_products.name.values)
+    product_embeddings = sbert.encode(products.name.values, convert_to_numpy=True)
     only_masters = products[products.master_product.notnull()]
-    master_products = only_masters.master_product.unique()
 
     candid_matches = []
-    for i, prod in tqdm(products[products.master_product.isnull()].iterrows()):
-        nn = index.get_nns_by_item(i, 100)
-        nn = [n for n in nn if n in only_masters.index][:args.top_k]
+    for i, prod in tqdm(products.iterrows()):
+        product_vec = product_embeddings[[i]]
+        distances, nn = index.search(product_vec, args.top_k)
+        nn = [mp for d, mp in zip(distances[0], nn[0]) if d > args.threshold]
         for idx in nn:
             mp = products.iloc[idx]
             candid_matches.append({
@@ -43,6 +41,7 @@ def blocker(sbert, products, args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--products')
+    parser.add_argument('--master-products')
     parser.add_argument('--s-bert')
     parser.add_argument('--top-k', type=int)
     parser.add_argument('--threshold', type=float)
@@ -50,9 +49,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     products = pd.read_csv(args.products)
+    master_products = pd.read_csv(args.master_products)
 
     sbert = SentenceTransformer(args.s_bert)
-    matches = blocker(sbert, products, args)
+    matches = blocker(sbert, products, master_products, args)
 
     Path(args.save_matches).parent.mkdir(parents=True, exist_ok=True)
     matches.to_csv(args.save_matches, index=False)
