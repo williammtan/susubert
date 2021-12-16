@@ -20,7 +20,6 @@ def index_sbert(sbert, sents):
 def blocker(sbert, products, master_products, args):
     index = index_sbert(sbert, master_products.name.values)
     product_embeddings = sbert.encode(products.name.values, convert_to_numpy=True)
-    only_masters = products[products.master_product.notnull()]
 
     candid_matches = []
     for i, prod in tqdm(products.iterrows()):
@@ -28,12 +27,12 @@ def blocker(sbert, products, master_products, args):
         distances, nn = index.search(product_vec, args.top_k)
         nn = [mp for d, mp in zip(distances[0], nn[0]) if d > args.threshold]
         for idx in nn:
-            mp = products.iloc[idx]
+            mp = master_products.iloc[idx]
             candid_matches.append({
                 "id1": prod.id,
-                "id2": mp.master_product_id,
+                "id2": mp.id,
                 "sent1": prod['name'],
-                "sent2": mp.master_product,
+                "sent2": mp['name'],
             })
     candid_matches = pd.DataFrame(candid_matches).drop_duplicates(subset=['id1', 'id2'])
     candid_matches = candid_matches.dropna(subset=['sent1', 'sent2'])
