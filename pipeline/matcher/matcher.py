@@ -24,15 +24,20 @@ def make_dataset(df, tokenizer):
 def matcher(matches, model, args):
     model, tokenizer = create_bert_model(model, args.lm)
 
-    match_dataset = make_dataset(matches, tokenizer)
-    logits = model.predict(match_dataset.batch(args.batch_size), batch_size=args.batch_size, verbose=1).logits
-    logits = softmax(logits).numpy()
+    match_results_full = []
 
-    probabilities = logits[:, 1]
-    predictions = (probabilities > args.threshold).astype(int)
+    for chunk in np.array_split(matches, int(len(matches) / 50000)):
+        match_dataset = make_dataset(chunk, tokenizer)
+        logits = model.predict(match_dataset.batch(args.batch_size), batch_size=args.batch_size, verbose=1).logits
+        logits = softmax(logits).numpy()
 
-    match_results = pd.DataFrame({'id1': matches.id1.values, 'id2': matches.id2.values, 'match': predictions, 'prob': probabilities})
-    return match_results
+        probabilities = logits[:, 1]
+        predictions = (probabilities > args.threshold).astype(int)
+
+        match_results = pd.DataFrame({'id1': chunk.id1.values, 'id2': chunk.id2.values, 'match': predictions, 'prob': probabilities})
+        match_results_full.append(match_results)
+    match_results_full = pd.concat(match_results_full)
+    return match_results_full
 
 
 if __name__ == '__main__':
