@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import math
 from pathlib import Path
-from faiss import IndexFlatL2
+import faiss
 
 from sentence_transformers import SentenceTransformer
 
@@ -12,8 +12,10 @@ from sentence_transformers import SentenceTransformer
 
 def index_sbert(sbert, sents):
     embeddings = sbert.encode(sents, convert_to_numpy=True)
-    index = IndexFlatL2(embeddings.shape[1])
-    index.add(np.array(embeddings).astype(np.float32))
+    index = faiss.IndexFlatL2(embeddings.shape[1])
+    embeddings = np.array(embeddings).astype(np.float32)
+    faiss.normalize_L2(embeddings)
+    index.add(embeddings)
 
     return index
 
