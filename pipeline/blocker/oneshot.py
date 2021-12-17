@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 
 def index_sbert(sbert, sents):
     embeddings = sbert.encode(sents, convert_to_numpy=True)
-    index = faiss.IndexFlatL2(embeddings.shape[1])
+    index = faiss.IndexFlatIP(embeddings.shape[1])
     embeddings = np.array(embeddings).astype(np.float32)
     faiss.normalize_L2(embeddings)
     index.add(embeddings)
@@ -22,6 +22,7 @@ def index_sbert(sbert, sents):
 def blocker(sbert, products, master_products, args):
     index = index_sbert(sbert, master_products.name.values)
     product_embeddings = sbert.encode(products.name.values, convert_to_numpy=True)
+    faiss.normalize_L2(product_embeddings)
 
     candid_matches = []
     for i, prod in tqdm(products.iterrows()):
