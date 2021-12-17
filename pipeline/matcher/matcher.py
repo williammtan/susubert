@@ -15,7 +15,7 @@ def create_bert_model(model_path, lm):
     return model, tokenizer
 
 def make_dataset(df, tokenizer):
-    encodings = tokenizer(text=df.sent1.tolist(), text_pair=df.sent2.tolist(), truncation=True, padding='max_length', max_length=150, return_attention_mask=True, add_special_tokens = True)
+    encodings = tokenizer(text=df.sent1.tolist(), text_pair=df.sent2.tolist(), truncation=True, padding='max_length', max_length=100, return_attention_mask=True, add_special_tokens = True)
     return tf.data.Dataset.from_tensor_slices((
         dict(encodings),
         df.match.values.astype('float32').reshape((-1,1)) if 'match' in df.columns else None
