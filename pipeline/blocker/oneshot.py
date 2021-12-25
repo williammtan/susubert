@@ -30,8 +30,8 @@ def blocker(sbert, products, master_products, args):
         distances, nn = index.search(product_vec, args.top_k)
         nn = [mp for d, mp in zip(distances[0], nn[0]) if d > args.threshold]
         for idx in nn:
+            mp = master_products.iloc[idx]
             if prod['product_category_id'] == mp['product_category_id']: # must match product_category_id
-                mp = master_products.iloc[idx]
                 candid_matches.append({
                     "id1": prod.id,
                     "id2": mp.id,
