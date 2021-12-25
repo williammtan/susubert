@@ -63,4 +63,4 @@ if __name__ == "__main__":
     index = extract_features(model=args.lm, products=products)
 
     Path(args.save_index).parent.mkdir(parents=True, exist_ok=True)
-    index.save(args.save_index, index=False)
+    index.save(args.save_index)
