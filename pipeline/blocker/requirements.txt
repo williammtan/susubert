@@ -5,3 +5,4 @@ numpy
 faiss-cpu
 transformers
 sentence-transformers
+annoy
