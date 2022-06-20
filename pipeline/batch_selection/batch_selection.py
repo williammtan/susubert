@@ -22,10 +22,8 @@ def negative_hard(products, index):
                 yield (non, offers.loc[i].id)
 
 def positive_all(products):
-    id_combinations = np.array(list(combinations(products.id.values, 2)))
-    for id1, id2 in tqdm(id_combinations):
-        match = 1 if products[products.id == id1].master_product.iloc[0] == products[products.id == id2].master_product.iloc[0] else 0
-        if match:
+    for _, prods in products.groupby('master_product'):
+        for id1, id2 in combinations(prods.id.values, 2):
             yield (id1, id2)
 
 def batch_selection(products, index):
