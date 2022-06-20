@@ -29,7 +29,8 @@ def serialize_matches(matches, features):
 
 def serialize_product_matches(matches, products, features):
     """Serialize matches given a products matches"""
-    serialized = [[' '.join(['COL ' + col + ' VAL ' + str(products[products.id == match['id'+str(i)]][col].iloc[0]) for col in features]) for i in range(1,3)] for _, match in tqdm(matches.iterrows(), total=len(matches))]
+    products = products.set_index('id')
+    serialized = [[' '.join(['COL ' + col + ' VAL ' + str(products.loc[match['id'+str(i)]][col]) for col in features]) for i in range(1,3)] for _, match in tqdm(matches.iterrows(), total=len(matches))]
     
     return serialized
 
