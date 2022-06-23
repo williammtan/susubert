@@ -328,7 +328,8 @@ def merge_cache_matches(
 )
 def save_clusters(
     clusters_path: InputPath(str),
-    products_path: InputPath(str)
+    products_path: InputPath(str),
+    min_cluster_size: int # we need this to filter out the clusters after we filter out the products in master products
     ):
     from sqlalchemy import create_engine, update
     import pandas as pd
@@ -338,48 +339,34 @@ def save_clusters(
     db_connection = create_engine(db_connection_str)
     db_connection.connect()
 
-    query_rds = lambda query: pd.read_sql(query, con=db_connection)
-
     # merge products with clusters
     products = pd.read_csv(products_path)
     try:
-        df_cls = pd.read_csv(clusters_path).merge(products[['id', 'name', 'master_product']], how='left', on='id')
-        df_cls.drop_duplicates(subset="id", inplace=True)
+        # ignore products which already have master products
+        df_cls = pd.read_csv(clusters_path).merge(products[['id']][products['master_product_id'].isnull()], on='id').drop_duplicates(subset="id")
     except pd.errors.EmptyDataError:
         print('no match data, passing')
         return
-
-    # add statuses
-    df_cls["master_product_status_id"] = 1 # unnamed cluster
-    df_cls.loc[df_cls.master_product.notnull(), "master_product_status_id"] = 2 # named cluster
-
-    # rename to db schema
-    df_cls = df_cls.rename(columns={"id":"product_source_id", "cluster":"cluster_id", "master_product": "master_product_id"})
-    df_cls = df_cls[["cluster_id", "product_source_id", "master_product_id", "master_product_status_id"]]
-
-    # change status of all the current mpcs to NOT USED
-    df_mpc = query_rds("SELECT * FROM food.master_product_clusters")[['id', 'master_product_status_id']] # select mpcs
-    df_mph_current = df_mpc[df_mpc.master_product_status_id.isin([1,3])] # WHERE master_product_status_id != 4 OR != 2
-    df_mph_current["current_status_id"] = 4 # convert all but clusters to NOT USED
+    
+    df_cls = df_cls.rename(columns={'id': 'internal_product_id', 'cluster': 'cluster_id'})[['internal_product_id', 'cluster_id']]
+    df_cls = df_cls[df_cls.cluster_id.isin(df_cls.cluster_id.value_counts().index[df_cls.cluster_id.value_counts() > min_cluster_size])]
+    df_cls['master_product_status_id'] = 1 # UNNAMED CLUSTER
 
     sql = """
-        UPDATE master_product_clusters AS mpc
-        SET mpc.master_product_status_id = 4
-        WHERE mpc.master_product_status_id != 2
-    """
+        UPDATE master_product_clusters
+        SET 
+            master_product_status_id = 4,
+            cluster_id = NULL
+        WHERE master_product_status_id = 1
+    """ # set UNNAMED CLUSTER suggestions to NOT USED
     with db_connection.begin() as conn:
+        df_ovr = pd.read_sql('SELECT id as master_product_cluster_id, 1 as previous_status_id, 4 as current_status_id FROM master_product_clusters WHERE master_product_status_id = 1', con=conn)
         conn.execute(sql)
+        df_ovr.to_sql("master_product_status_histories", con=conn, schema="food", if_exists="append", index=False)
+        df_cls.to_sql('master_product_clusters', con=conn, schema="food", if_exists="append", index=False)
+        df_his = pd.read_sql(f"SELECT id as master_product_cluster_id, master_product_status_id as previous_status_id, master_product_status_id as current_status_id FROM master_product_clusters ORDER BY created_at DESC LIMIT {len(df_cls)}", con=conn)
+        df_his.to_sql("master_product_status_histories", con=conn, schema="food", if_exists="append", index=False)
 
-    # append to db
-    df_cls.to_sql("master_product_clusters", db_connection, schema="food", if_exists="append", index=False)
-
-    # add to mp history
-    df_mph_new = query_rds(f"SELECT id, master_product_status_id FROM master_product_clusters ORDER BY created_at DESC LIMIT {len(df_cls)}")
-    df_mph_new['current_status_id'] = df_mph_new["master_product_status_id"] # don't change status, meaning added new clusters
-
-    df_mph = pd.concat([df_mph_current, df_mph_new])
-    df_mph = df_mph.rename(columns={"id":"master_product_cluster_id", "master_product_status_id":"previous_status_id"})
-    df_mph.to_sql("master_product_status_histories", db_connection, schema="food", if_exists="append", index=False)
 
 @_component(
     packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'google-cloud-storage']
@@ -442,7 +429,7 @@ def save_cache_matches(cache_matches: InputPath(str), model_id):
 @_component(
     packages_to_install=['sqlalchemy', 'pandas', 'pymysql', 'google-cloud-storage']
 )
-def generate_fin_suggestions(matches_path: InputPath(str), products_path: InputPath(str)):
+def generate_fin_suggestions(matches_path: InputPath(str)):
     from sqlalchemy import create_engine
     import pandas as pd
     import os
@@ -453,10 +440,19 @@ def generate_fin_suggestions(matches_path: InputPath(str), products_path: InputP
 
     matches = pd.read_csv(matches_path)
     matches = matches[matches.match == 1]
-    matches = matches.rename({'id1': 'product_id', 'id2': 'master_product_id'})[['product_id', 'master_product_id']]
-    matches['is_removed'] = 0
-    matches['created_by'] = 0
-    matches['updated_by'] = 0
+    matches = matches.rename(columns={'id1': 'internal_product_id', 'id2': 'master_product_id'})[['internal_product_id', 'master_product_id']]
+    matches['cluster_id'] = None
+    matches['master_product_status_id'] = 5 # fin suggestion
 
-    matches.to_sql('product_fins', db_connection, schema='food', if_exists='replace', index=False)
-
+    sql = """
+        UPDATE master_product_clusters AS mpc
+        SET mpc.master_product_status_id = 4
+        WHERE mpc.master_product_status_id = 5
+    """
+    with db_connection.begin() as conn:
+        df_ovr = pd.read_sql('SELECT id as master_product_cluster_id, 5 as previous_status_id, 4 as current_status_id FROM master_product_clusters WHERE master_product_status_id = 5', con=conn)
+        conn.execute(sql)
+        df_ovr.to_sql("master_product_status_histories", con=conn, schema="food", if_exists="append", index=False)
+        matches.to_sql('master_product_clusters', con=conn, schema="food", if_exists="append", index=False)
+        df_his = pd.read_sql(f"SELECT id as master_product_cluster_id, master_product_status_id as previous_status_id, master_product_status_id as current_status_id FROM master_product_clusters ORDER BY created_at DESC LIMIT {len(matches)}", con=conn)
+        df_his.to_sql("master_product_status_histories", con=conn, schema="food", if_exists="append", index=False)
