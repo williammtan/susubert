@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from pathlib import Path
+import math
 
 from transformers import TFAutoModelForSequenceClassification, AutoTokenizer
 import tensorflow as tf
@@ -26,7 +27,7 @@ def matcher(matches, model, args):
 
     match_results_full = []
 
-    for chunk in np.array_split(matches, int(len(matches) / 50000)):
+    for chunk in np.array_split(matches, math.ceil(len(matches) / 50000)):
         match_dataset = make_dataset(chunk, tokenizer)
         logits = model.predict(match_dataset.batch(args.batch_size), batch_size=args.batch_size, verbose=1).logits
         logits = softmax(logits).numpy()
