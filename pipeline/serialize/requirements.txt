@@ -1,2 +1,2 @@
-pandas
-tqdm
+pandas==1.1.5
+tqdm==4.61.1
