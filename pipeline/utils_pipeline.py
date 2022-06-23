@@ -1,10 +1,7 @@
 import kfp 
 from kfp import dsl
-from kfp.components import create_component_from_func
 from dotenv import load_dotenv
 import os
-
-from utils import query_rds
 
 load_dotenv()
 
@@ -36,10 +33,9 @@ def connect_to_rds_op():
     name='GPU check',
 )
 def gpu_pipeline():
+    gpu_check_op()
     ip_check = ip_check_op()
-    ip_check_op().after(ip_check)
-    query_rds().after(ip_check)
+    connect_to_rds_op().after(ip_check)
 
 if __name__ == '__main__':
-    client = kfp.Client(host='https://2286482f38de0564-dot-us-central1.pipelines.googleusercontent.com')
-    client.create_run_from_pipeline_func(gpu_pipeline, arguments={})
+    kfp.compiler.Compiler().compile(gpu_pipeline, 'utils_pipeline.yaml')
