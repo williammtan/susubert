@@ -41,25 +41,10 @@ def match_pipeline(
 
     serialize_products_task = serialize_op(matches='', products=re_task.output, keepcolumns=keep_columns)
     blocker_task = blocker_op(re_task.output, serialize_products_task.output, download_sbert_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
-
-    if cache_matches_table is not None:
-        query_cache_matches = query_rds(query=f"SELECT product_source_id_1 as id1, product_source_id_2 as id2, `match`, prob FROM food.{cache_matches_table} WHERE model_id = {model_id}") # find matches where the model is the inputted model
-        query_cache_matches.execution_options.caching_strategy.max_cache_staleness = "P0D"
-
-        drop_cache_task = drop_cache_matches(blocked_matches=blocker_task.output, cached_matches=query_cache_matches.output)
-        serialize_matches_task = serialize_op(matches=drop_cache_task.output, products=re_task.output, keepcolumns=keep_columns).set_gpu_limit(1)
-    else:
-        serialize_matches_task = serialize_op(matches=blocker_task.output, products=re_task.output, keepcolumns=keep_columns).set_gpu_limit(1)
+    serialize_matches_task = serialize_op(matches=blocker_task.output, products=re_task.output, keepcolumns=keep_columns).set_gpu_limit(1)
 
     matcher_task = matcher_op(matches=serialize_matches_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
-
-    if cache_matches_table is not None:
-        merge_cache_task = merge_cache_matches(matches=matcher_task.output, cached_matches=query_cache_matches.output)
-        fin_task = fin(matches=merge_cache_task.output, products=re_task.output, min_cluster_size=min_cluster_size).set_gpu_limit(1)
-        save_cache_task = save_cache_matches(cache_matches=matcher_task.output, model_id=model_id)
-    else:
-        fin_task = fin(matches=matcher_task.output, products=re_task.output, min_cluster_size=min_cluster_size).set_gpu_limit(1)
-
+    fin_task = fin(matches=matcher_task.output, products=re_task.output, min_cluster_size=min_cluster_size).set_gpu_limit(1)
     save_clusters_task = save_clusters(clusters=fin_task.output, products=re_task.output)
 
 if __name__ == '__main__':
