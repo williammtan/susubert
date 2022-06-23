@@ -1,8 +1,7 @@
-pandas
-tqdm
-torch
-numpy
-faiss-cpu
-transformers
-sentence-transformers
-annoy
+pandas==1.1.5
+tqdm==4.61.1
+torch==1.10.1
+numpy==1.19.5
+transformers==4.15.0
+sentence-transformers==2.1.0
+annoy==1.17.0
