@@ -1,6 +1,6 @@
 import kfp
 from kfp import dsl
-from kfp.components import load_component_from_file
+from kfp.components import load_component_from_file, load_component_from_url
 import sys
 
 from utils import *
@@ -21,27 +21,32 @@ def oneshot_match_pipeline(
     blocker_threshold: float=0.25,
 
     match_threshold: float=0.8,
+    save_matches: str='gs://ml_foodid_project/product-matching/internal/oneshot_clusters.csv'
 ):
     """This pipeline will block matches and predict product matches (using cache) to create clusters."""
 
     blocker_op = load_component_from_file('blocker/oneshot_component.yaml')
     matcher_op = load_component_from_file('matcher/component.yaml')
+    upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/c783705c0e566c611ef70160a01e3ed0865051bd/components/contrib/google-cloud/storage/upload_to_explicit_uri/component.yaml')
+
 
     download_sbert_task = download_model(sbert_model_id)
     download_model_task = download_model(model_id)
 
     query_products = query_rds(query=product_query)
-    query_master_products = query_rds(query="SELECT * FROM master_products WHERE is_deleted = 0")
+    query_master_products = query_rds(query="SELECT * FROM master_products")
     preprocess_task = preprocess(query_products.output)
     re_task = product_regex(preprocess_task.outputs['products'])
 
     blocker_task = blocker_op(re_task.output, query_master_products.output, download_sbert_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
     matcher_task = matcher_op(matches=blocker_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
-    generate_suggestions_task = generate_fin_suggestions(matches=matcher_task.output).set_gpu_limit(1)
+    upload_task = upload_op(matcher_task.output, save_matches)
+
+    # generate_suggestions_task = generate_fin_suggestions(matches=matcher_task.output, products=re_task.output)
 
 if __name__ == '__main__':
     if sys.argv[1] == 'compile':
-        kfp.compiler.Compiler().compile(oneshot_match_pipeline, 'oneshot_match_pipeline.yaml')
+        kfp.compiler.Compiler().compile(oneshot_match_pipeline, 'oneshot_match_pipeline_dry.yaml')
     elif sys.argv[1] == 'run':
         client = kfp.Client(host='https://2286482f38de0564-dot-us-central1.pipelines.googleusercontent.com')
         client.create_run_from_pipeline_func(oneshot_match_pipeline, arguments={})

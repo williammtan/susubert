@@ -1,0 +1,585 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: train-pipeline-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline_compilation_time: '2021-12-07T17:19:37.334826',
+    pipelines.kubeflow.org/pipeline_spec: '{"inputs": [{"default": "indobenchmark/indobert-base-p1",
+      "name": "lm", "optional": true, "type": "String"}, {"default": "gs://input_to_product_file",
+      "name": "product_input", "optional": true, "type": "String"}, {"default": "gs://ml_foodid_project/product-matching/susubert/pareto_model",
+      "name": "model_save", "optional": true, "type": "String"}, {"default": "[\"name\",
+      \"price\"]", "name": "keep_columns", "optional": true, "type": "JsonArray"},
+      {"default": "32", "name": "batch_size", "optional": true, "type": "Integer"},
+      {"default": "2e-05", "name": "learning_rate", "optional": true, "type": "Float"},
+      {"default": "2", "name": "num_epochs", "optional": true, "type": "Integer"}],
+      "name": "train pipeline"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4}
+spec:
+  entrypoint: train-pipeline
+  templates:
+  - name: batch-selection-component
+    container:
+      args: []
+      command: [python, batch_selection.py, --products, /tmp/inputs/Products/data,
+        --index, /tmp/inputs/Index/data, --save-matches, /tmp/outputs/Matches/data]
+      image: gcr.io/food-id-app/susubert/batch_selection:latest
+    inputs:
+      artifacts:
+      - {name: feature-extraction-function-SaveIndex, path: /tmp/inputs/Index/data}
+      - {name: preprocess-master_products, path: /tmp/inputs/Products/data}
+    outputs:
+      artifacts:
+      - {name: batch-selection-component-Matches, path: /tmp/outputs/Matches/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Creates
+          batches of match pairs for training", "implementation": {"container": {"command":
+          ["python", "batch_selection.py", "--products", {"inputPath": "Products"},
+          "--index", {"inputPath": "Index"}, "--save-matches", {"outputPath": "Matches"}],
+          "image": "gcr.io/food-id-app/susubert/batch_selection:latest"}}, "inputs":
+          [{"description": "CSV file of products, requires the column `master_product`",
+          "name": "Products"}, {"description": "Product index", "name": "Index"}],
+          "name": "Batch Selection Component", "outputs": [{"description": "Path to
+          save match pairs", "name": "Matches", "type": "LocalPath"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "e2a6c38109b74073230dcedfd3e8300fa42ee404090bf9e5ed2499d448bca780", "url":
+          "batch_selection/component.yaml"}'}
+  - name: download-from-gcs
+    container:
+      args: []
+      command:
+      - bash
+      - -ex
+      - -c
+      - |
+        if [ -n "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
+            gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+        fi
+
+        uri="$0"
+        output_path="$1"
+
+        # Checking whether the URI points to a single blob, a directory or a URI pattern
+        # URI points to a blob when that URI does not end with slash and listing that URI only yields the same URI
+        if [[ "$uri" != */ ]] && (gsutil ls "$uri" | grep --fixed-strings --line-regexp "$uri"); then
+            mkdir -p "$(dirname "$output_path")"
+            gsutil -m cp -r "$uri" "$output_path"
+        else
+            mkdir -p "$output_path" # When source path is a directory, gsutil requires the destination to also be a directory
+            gsutil -m rsync -r "$uri" "$output_path" # gsutil cp has different path handling than Linux cp. It always puts the source directory (name) inside the destination directory. gsutil rsync does not have that problem.
+        fi
+      - '{{inputs.parameters.product_input}}'
+      - /tmp/outputs/Data/data
+      image: google/cloud-sdk
+    inputs:
+      parameters:
+      - {name: product_input}
+    outputs:
+      artifacts:
+      - {name: download-from-gcs-Data, path: /tmp/outputs/Data/data}
+    metadata:
+      annotations: {author: Alexey Volkov <alexey.volkov@ark-kun.com>, canonical_location: 'https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/google-cloud/storage/download/component.yaml',
+        pipelines.kubeflow.org/component_spec: '{"implementation": {"container": {"command":
+          ["bash", "-ex", "-c", "if [ -n \"${GOOGLE_APPLICATION_CREDENTIALS}\" ];
+          then\n    gcloud auth activate-service-account --key-file=\"${GOOGLE_APPLICATION_CREDENTIALS}\"\nfi\n\nuri=\"$0\"\noutput_path=\"$1\"\n\n#
+          Checking whether the URI points to a single blob, a directory or a URI pattern\n#
+          URI points to a blob when that URI does not end with slash and listing that
+          URI only yields the same URI\nif [[ \"$uri\" != */ ]] && (gsutil ls \"$uri\"
+          | grep --fixed-strings --line-regexp \"$uri\"); then\n    mkdir -p \"$(dirname
+          \"$output_path\")\"\n    gsutil -m cp -r \"$uri\" \"$output_path\"\nelse\n    mkdir
+          -p \"$output_path\" # When source path is a directory, gsutil requires the
+          destination to also be a directory\n    gsutil -m rsync -r \"$uri\" \"$output_path\"
+          # gsutil cp has different path handling than Linux cp. It always puts the
+          source directory (name) inside the destination directory. gsutil rsync does
+          not have that problem.\nfi\n", {"inputValue": "GCS path"}, {"outputPath":
+          "Data"}], "image": "google/cloud-sdk"}}, "inputs": [{"name": "GCS path",
+          "type": "String"}], "metadata": {"annotations": {"author": "Alexey Volkov
+          <alexey.volkov@ark-kun.com>", "canonical_location": "https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/google-cloud/storage/download/component.yaml"}},
+          "name": "Download from GCS", "outputs": [{"name": "Data"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "471518bc785e1f3ad06f1d546e4dcac7c6872e7bba34a28c10b9b539c4c84e58", "url":
+          "https://raw.githubusercontent.com/kubeflow/pipelines/c783705c0e566c611ef70160a01e3ed0865051bd/components/contrib/google-cloud/storage/download/component.yaml"}',
+        pipelines.kubeflow.org/arguments.parameters: '{"GCS path": "{{inputs.parameters.product_input}}"}'}
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+  - name: evaluate
+    container:
+      args: []
+      command: [python, evaluate.py, --matches, /tmp/inputs/Matches/data, --model,
+        /tmp/inputs/Model/data, --lm, '{{inputs.parameters.lm}}', --batch-size, '{{inputs.parameters.batch_size}}',
+        --mlpipeline-ui-metadata-path, /tmp/outputs/mlpipeline-ui-metadata/data]
+      image: gcr.io/food-id-app/susubert/evaluate:latest
+    inputs:
+      parameters:
+      - {name: batch_size}
+      - {name: lm}
+      artifacts:
+      - {name: train-test-split-test, path: /tmp/inputs/Matches/data}
+      - {name: train-SaveModel, path: /tmp/inputs/Model/data}
+    outputs:
+      artifacts:
+      - {name: mlpipeline-ui-metadata, path: /tmp/outputs/mlpipeline-ui-metadata/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Evaluates
+          the model on a test dataset", "implementation": {"container": {"command":
+          ["python", "evaluate.py", "--matches", {"inputPath": "Matches"}, "--model",
+          {"inputPath": "Model"}, "--lm", {"inputValue": "LM"}, "--batch-size", {"inputValue":
+          "BatchSize"}, "--mlpipeline-ui-metadata-path", {"outputPath": "mlpipeline-ui-metadata"}],
+          "image": "gcr.io/food-id-app/susubert/evaluate:latest"}}, "inputs": [{"description":
+          "CSV file to serizalized match pairs", "name": "Matches"}, {"description":
+          "Hugginface language model", "name": "LM", "type": "String"}, {"description":
+          "Path to trained model", "name": "Model"}, {"description": "Training batch
+          size", "name": "BatchSize", "type": "Integer"}], "name": "Evaluate", "outputs":
+          [{"name": "mlpipeline-ui-metadata"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "ad2c8da2c17057321e553c01df330c4c61d8cacb0cd3f2cbdf69adb1da0a05c2", "url":
+          "evaluate/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"BatchSize":
+          "{{inputs.parameters.batch_size}}", "LM": "{{inputs.parameters.lm}}"}'}
+  - name: feature-extraction-function
+    container:
+      args: []
+      command: [python, feature_extraction.py, --lm, '{{inputs.parameters.lm}}', --products,
+        /tmp/inputs/Products/data, --save-index, /tmp/outputs/SaveIndex/data]
+      image: gcr.io/food-id-app/susubert/feature_extraction@sha256:86821274ebf5c161cde58a5aa20f23b953b4848bc5e10aefde36f6a4c7d2abe5
+    inputs:
+      parameters:
+      - {name: lm}
+      artifacts:
+      - {name: preprocess-master_products, path: /tmp/inputs/Products/data}
+    outputs:
+      artifacts:
+      - {name: feature-extraction-function-SaveIndex, path: /tmp/outputs/SaveIndex/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Uses
+          pretrained LM to extract features from the name of a list of products",
+          "implementation": {"container": {"command": ["python", "feature_extraction.py",
+          "--lm", {"inputValue": "LM"}, "--products", {"inputPath": "Products"}, "--save-index",
+          {"outputPath": "SaveIndex"}], "image": "gcr.io/food-id-app/susubert/feature_extraction@sha256:86821274ebf5c161cde58a5aa20f23b953b4848bc5e10aefde36f6a4c7d2abe5"}},
+          "inputs": [{"description": "Huggingface language model", "name": "LM", "type":
+          "String"}, {"description": "CSV file to products", "name": "Products"}],
+          "name": "Feature Extraction Function", "outputs": [{"description": "Path
+          to annoy index", "name": "SaveIndex", "type": "LocalPath"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "40f216452cf3dd0618492d78cc5edbd1abc0c42f9395fb53cb57ff5e0219d281", "url":
+          "feature_extraction/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"LM":
+          "{{inputs.parameters.lm}}"}'}
+  - name: preprocess
+    container:
+      args: [--input, /tmp/inputs/input/data, --products, /tmp/outputs/products/data,
+        --master-products, /tmp/outputs/master_products/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'pandas' 'sqlalchemy' 'pymysql' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3
+        -m pip install --quiet --no-warn-script-location 'pandas' 'sqlalchemy' 'pymysql'
+        --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def preprocess(input_path, products_path, master_products_path):
+            from sqlalchemy import create_engine
+            from pathlib import Path
+            import pandas as pd
+            import os
+
+            db_connection_str = os.environ['SQL_ENDPOINT']
+            db_connection = create_engine(db_connection_str)
+            db_connection.connect()
+
+            products = pd.read_csv(input_path).drop_duplicates(subset='id')
+            products = products.dropna(subset=['id', 'name', 'description'])
+
+            if 'master_product_id' in products.columns:
+                def re_display_unit(mp):
+                    string = ''
+                    if mp.quantity != 0:
+                        string += f' {int(mp.quantity)} x'
+                    if mp.volume != 0:
+                        volume = int(mp.volume) if round(mp.volume) == mp.volume else mp.volume
+                        string += f' {int(mp.volume)} {mp.uom}'
+                    elif mp.weight != 0:
+                        weight = int(mp.weight) if round(mp.weight) == mp.weight else mp.weight
+                        string += f' {int(mp.weight)} {mp.uom}'
+                    return string
+
+                master_products = pd.read_sql('SELECT id, name, description, weight, volume, quantity, uom FROM master_products WHERE is_deleted = 0', db_connection)
+                master_products['display_unit'] = master_products.apply(re_display_unit, axis=1)
+                master_products['base'] = master_products.apply(lambda x: x['name'].replace(x.display_unit, ''), axis=1)
+                print(master_products.name)
+                print(master_products[['id', 'name', 'base']].rename(columns={'id': 'master_product_id', 'name': 'master_product', 'base': 'master_product_base'}).info())
+
+                products = products.merge(master_products[['id', 'name', 'base']].rename(columns={'id': 'master_product_id', 'name': 'master_product', 'base': 'master_product_base'}), how='left', on='master_product_id')
+
+                Path(master_products_path).parent.mkdir(parents=True, exist_ok=True)
+                products.dropna(subset=['master_product']).to_csv(master_products_path, index=False)
+            else:
+                open(master_products_path, 'w')
+
+            Path(products_path).parent.mkdir(parents=True, exist_ok=True)
+            products.to_csv(products_path, index=False)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Preprocess', description='')
+        _parser.add_argument("--input", dest="input_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--products", dest="products_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--master-products", dest="master_products_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = preprocess(**_parsed_args)
+      env:
+      - {name: SQL_ENDPOINT, value: 'mysql+pymysql://foodid:foodnetwork@10.2.100.8:3306/food'}
+      image: python:3.7
+    inputs:
+      artifacts:
+      - {name: download-from-gcs-Data, path: /tmp/inputs/input/data}
+    outputs:
+      artifacts:
+      - {name: preprocess-master_products, path: /tmp/outputs/master_products/data}
+      - {name: preprocess-products, path: /tmp/outputs/products/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--input", {"inputPath": "input"}, "--products", {"outputPath":
+          "products"}, "--master-products", {"outputPath": "master_products"}], "command":
+          ["sh", "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
+          --no-warn-script-location ''pandas'' ''sqlalchemy'' ''pymysql'' || PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''pandas'' ''sqlalchemy''
+          ''pymysql'' --user) && \"$0\" \"$@\"", "sh", "-ec", "program_path=$(mktemp)\nprintf
+          \"%s\" \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n",
+          "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n    os.makedirs(os.path.dirname(file_path),
+          exist_ok=True)\n    return file_path\n\ndef preprocess(input_path, products_path,
+          master_products_path):\n    from sqlalchemy import create_engine\n    from
+          pathlib import Path\n    import pandas as pd\n    import os\n\n    db_connection_str
+          = os.environ[''SQL_ENDPOINT'']\n    db_connection = create_engine(db_connection_str)\n    db_connection.connect()\n\n    products
+          = pd.read_csv(input_path).drop_duplicates(subset=''id'')\n    products =
+          products.dropna(subset=[''id'', ''name'', ''description''])\n\n    if ''master_product_id''
+          in products.columns:\n        def re_display_unit(mp):\n            string
+          = ''''\n            if mp.quantity != 0:\n                string += f''
+          {int(mp.quantity)} x''\n            if mp.volume != 0:\n                volume
+          = int(mp.volume) if round(mp.volume) == mp.volume else mp.volume\n                string
+          += f'' {int(mp.volume)} {mp.uom}''\n            elif mp.weight != 0:\n                weight
+          = int(mp.weight) if round(mp.weight) == mp.weight else mp.weight\n                string
+          += f'' {int(mp.weight)} {mp.uom}''\n            return string\n\n        master_products
+          = pd.read_sql(''SELECT id, name, description, weight, volume, quantity,
+          uom FROM master_products WHERE is_deleted = 0'', db_connection)\n        master_products[''display_unit'']
+          = master_products.apply(re_display_unit, axis=1)\n        master_products[''base'']
+          = master_products.apply(lambda x: x[''name''].replace(x.display_unit, ''''),
+          axis=1)\n        print(master_products.name)\n        print(master_products[[''id'',
+          ''name'', ''base'']].rename(columns={''id'': ''master_product_id'', ''name'':
+          ''master_product'', ''base'': ''master_product_base''}).info())\n\n        products
+          = products.merge(master_products[[''id'', ''name'', ''base'']].rename(columns={''id'':
+          ''master_product_id'', ''name'': ''master_product'', ''base'': ''master_product_base''}),
+          how=''left'', on=''master_product_id'')\n\n        Path(master_products_path).parent.mkdir(parents=True,
+          exist_ok=True)\n        products.dropna(subset=[''master_product'']).to_csv(master_products_path,
+          index=False)\n    else:\n        open(master_products_path, ''w'')\n\n    Path(products_path).parent.mkdir(parents=True,
+          exist_ok=True)\n    products.to_csv(products_path, index=False)\n\nimport
+          argparse\n_parser = argparse.ArgumentParser(prog=''Preprocess'', description='''')\n_parser.add_argument(\"--input\",
+          dest=\"input_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--products\",
+          dest=\"products_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parser.add_argument(\"--master-products\",
+          dest=\"master_products_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = preprocess(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs": [{"name":
+          "input", "type": "String"}], "name": "Preprocess", "outputs": [{"name":
+          "products", "type": "String"}, {"name": "master_products", "type": "String"}]}',
+        pipelines.kubeflow.org/component_ref: '{}'}
+  - name: serialize
+    container:
+      args: []
+      command: [python, serialize.py, --matches, /tmp/inputs/Matches/data, --products,
+        /tmp/inputs/Products/data, --keep-columns, '{{inputs.parameters.keep_columns}}',
+        --save-matches, /tmp/outputs/SaveMatches/data]
+      image: gcr.io/food-id-app/susubert/serialize:latest
+    inputs:
+      parameters:
+      - {name: keep_columns}
+      artifacts:
+      - {name: batch-selection-component-Matches, path: /tmp/inputs/Matches/data}
+      - {name: preprocess-master_products, path: /tmp/inputs/Products/data}
+    outputs:
+      artifacts:
+      - {name: serialize-SaveMatches, path: /tmp/outputs/SaveMatches/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Serializes
+          match pairs in [COL] [VAL] format", "implementation": {"container": {"command":
+          ["python", "serialize.py", "--matches", {"inputPath": "Matches"}, "--products",
+          {"inputPath": "Products"}, "--keep-columns", {"inputValue": "KeepColumns"},
+          "--save-matches", {"outputPath": "SaveMatches"}], "image": "gcr.io/food-id-app/susubert/serialize:latest"}},
+          "inputs": [{"description": "CSV file to match pairs", "name": "Matches"},
+          {"description": "CSV file to products", "name": "Products"}, {"description":
+          "List of columns to include", "name": "KeepColumns", "type": "JsonArray"}],
+          "name": "Serialize", "outputs": [{"description": "Path to save serialized
+          match pairs", "name": "SaveMatches"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "0cd605ee6db6cc246efb2254f5a7022395ca0470c0142928cc2868cd042fd8ad", "url":
+          "serialize/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"KeepColumns":
+          "{{inputs.parameters.keep_columns}}"}'}
+  - name: train
+    container:
+      args: []
+      command: [python, train.py, --matches, /tmp/inputs/Matches/data, --lm, '{{inputs.parameters.lm}}',
+        --model, /tmp/inputs/Model/data, --lr, '{{inputs.parameters.learning_rate}}',
+        --batch-size, '{{inputs.parameters.batch_size}}', --n-epochs, '{{inputs.parameters.num_epochs}}',
+        --save-model, /tmp/outputs/SaveModel/data]
+      image: gcr.io/food-id-app/susubert/train:latest
+    inputs:
+      parameters:
+      - {name: batch_size}
+      - {name: learning_rate}
+      - {name: lm}
+      - {name: num_epochs}
+      artifacts:
+      - {name: train-test-split-train, path: /tmp/inputs/Matches/data}
+      - name: Model
+        path: /tmp/inputs/Model/data
+        raw: {data: ''}
+    outputs:
+      artifacts:
+      - {name: train-SaveModel, path: /tmp/outputs/SaveModel/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Trains
+          a BertForSequenceClassification model", "implementation": {"container":
+          {"command": ["python", "train.py", "--matches", {"inputPath": "Matches"},
+          "--lm", {"inputValue": "LM"}, "--model", {"inputPath": "Model"}, "--lr",
+          {"inputValue": "LearningRate"}, "--batch-size", {"inputValue": "BatchSize"},
+          "--n-epochs", {"inputValue": "NumEpochs"}, "--save-model", {"outputPath":
+          "SaveModel"}], "image": "gcr.io/food-id-app/susubert/train:latest"}}, "inputs":
+          [{"description": "CSV file to serizalized match pairs", "name": "Matches"},
+          {"description": "Hugginface language model", "name": "LM", "type": "String"},
+          {"default": "", "description": "Pretrained model", "name": "Model", "optional":
+          true}, {"description": "Training batch size", "name": "BatchSize", "type":
+          "Integer"}, {"description": "Optimizer learning rate", "name": "LearningRate",
+          "type": "Float"}, {"description": "Number of training epochs", "name": "NumEpochs",
+          "type": "Integer"}], "name": "Train", "outputs": [{"description": "Path
+          to save trained model", "name": "SaveModel"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "eed1c79d70162466457a604ff5d441ead67bbb9d6ae4fa116fc7cb367c88a804", "url":
+          "train/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"BatchSize":
+          "{{inputs.parameters.batch_size}}", "LM": "{{inputs.parameters.lm}}", "LearningRate":
+          "{{inputs.parameters.learning_rate}}", "NumEpochs": "{{inputs.parameters.num_epochs}}"}'}
+  - name: train-pipeline
+    inputs:
+      parameters:
+      - {name: batch_size}
+      - {name: keep_columns}
+      - {name: learning_rate}
+      - {name: lm}
+      - {name: model_save}
+      - {name: num_epochs}
+      - {name: product_input}
+    dag:
+      tasks:
+      - name: batch-selection-component
+        template: batch-selection-component
+        dependencies: [feature-extraction-function, preprocess]
+        arguments:
+          artifacts:
+          - {name: feature-extraction-function-SaveIndex, from: '{{tasks.feature-extraction-function.outputs.artifacts.feature-extraction-function-SaveIndex}}'}
+          - {name: preprocess-master_products, from: '{{tasks.preprocess.outputs.artifacts.preprocess-master_products}}'}
+      - name: download-from-gcs
+        template: download-from-gcs
+        arguments:
+          parameters:
+          - {name: product_input, value: '{{inputs.parameters.product_input}}'}
+      - name: evaluate
+        template: evaluate
+        dependencies: [train, train-test-split]
+        arguments:
+          parameters:
+          - {name: batch_size, value: '{{inputs.parameters.batch_size}}'}
+          - {name: lm, value: '{{inputs.parameters.lm}}'}
+          artifacts:
+          - {name: train-SaveModel, from: '{{tasks.train.outputs.artifacts.train-SaveModel}}'}
+          - {name: train-test-split-test, from: '{{tasks.train-test-split.outputs.artifacts.train-test-split-test}}'}
+      - name: feature-extraction-function
+        template: feature-extraction-function
+        dependencies: [preprocess]
+        arguments:
+          parameters:
+          - {name: lm, value: '{{inputs.parameters.lm}}'}
+          artifacts:
+          - {name: preprocess-master_products, from: '{{tasks.preprocess.outputs.artifacts.preprocess-master_products}}'}
+      - name: preprocess
+        template: preprocess
+        dependencies: [download-from-gcs]
+        arguments:
+          artifacts:
+          - {name: download-from-gcs-Data, from: '{{tasks.download-from-gcs.outputs.artifacts.download-from-gcs-Data}}'}
+      - name: serialize
+        template: serialize
+        dependencies: [batch-selection-component, preprocess]
+        arguments:
+          parameters:
+          - {name: keep_columns, value: '{{inputs.parameters.keep_columns}}'}
+          artifacts:
+          - {name: batch-selection-component-Matches, from: '{{tasks.batch-selection-component.outputs.artifacts.batch-selection-component-Matches}}'}
+          - {name: preprocess-master_products, from: '{{tasks.preprocess.outputs.artifacts.preprocess-master_products}}'}
+      - name: train
+        template: train
+        dependencies: [train-test-split]
+        arguments:
+          parameters:
+          - {name: batch_size, value: '{{inputs.parameters.batch_size}}'}
+          - {name: learning_rate, value: '{{inputs.parameters.learning_rate}}'}
+          - {name: lm, value: '{{inputs.parameters.lm}}'}
+          - {name: num_epochs, value: '{{inputs.parameters.num_epochs}}'}
+          artifacts:
+          - {name: train-test-split-train, from: '{{tasks.train-test-split.outputs.artifacts.train-test-split-train}}'}
+      - name: train-test-split
+        template: train-test-split
+        dependencies: [serialize]
+        arguments:
+          artifacts:
+          - {name: serialize-SaveMatches, from: '{{tasks.serialize.outputs.artifacts.serialize-SaveMatches}}'}
+      - name: upload-to-gcs
+        template: upload-to-gcs
+        dependencies: [train]
+        arguments:
+          parameters:
+          - {name: model_save, value: '{{inputs.parameters.model_save}}'}
+          artifacts:
+          - {name: train-SaveModel, from: '{{tasks.train.outputs.artifacts.train-SaveModel}}'}
+  - name: train-test-split
+    container:
+      args: [--matches, /tmp/inputs/matches/data, --test-split, '0.2', --train, /tmp/outputs/train/data,
+        --test, /tmp/outputs/test/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'pandas' 'sklearn' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install
+        --quiet --no-warn-script-location 'pandas' 'sklearn' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def train_test_split(
+            matches_path,
+            train_path,
+            test_path,
+            test_split=0.2,
+            ):
+            from sklearn.model_selection import train_test_split
+            import pandas as pd
+            from pathlib import Path
+
+            matches = pd.read_csv(matches_path)
+            train, test = train_test_split(matches, test_size=test_split)
+
+            Path(train_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(test_path).parent.mkdir(parents=True, exist_ok=True)
+            train.to_csv(train_path, index=False)
+            test.to_csv(test_path, index=False)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Train test split', description='')
+        _parser.add_argument("--matches", dest="matches_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--test-split", dest="test_split", type=float, required=False, default=argparse.SUPPRESS)
+        _parser.add_argument("--train", dest="train_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--test", dest="test_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = train_test_split(**_parsed_args)
+      image: python:3.7
+    inputs:
+      artifacts:
+      - {name: serialize-SaveMatches, path: /tmp/inputs/matches/data}
+    outputs:
+      artifacts:
+      - {name: train-test-split-test, path: /tmp/outputs/test/data}
+      - {name: train-test-split-train, path: /tmp/outputs/train/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--matches", {"inputPath": "matches"}, {"if": {"cond": {"isPresent":
+          "test_split"}, "then": ["--test-split", {"inputValue": "test_split"}]}},
+          "--train", {"outputPath": "train"}, "--test", {"outputPath": "test"}], "command":
+          ["sh", "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
+          --no-warn-script-location ''pandas'' ''sklearn'' || PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''pandas'' ''sklearn''
+          --user) && \"$0\" \"$@\"", "sh", "-ec", "program_path=$(mktemp)\nprintf
+          \"%s\" \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n",
+          "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n    os.makedirs(os.path.dirname(file_path),
+          exist_ok=True)\n    return file_path\n\ndef train_test_split(\n    matches_path,\n    train_path,\n    test_path,\n    test_split=0.2,\n    ):\n    from
+          sklearn.model_selection import train_test_split\n    import pandas as pd\n    from
+          pathlib import Path\n\n    matches = pd.read_csv(matches_path)\n    train,
+          test = train_test_split(matches, test_size=test_split)\n\n    Path(train_path).parent.mkdir(parents=True,
+          exist_ok=True)\n    Path(test_path).parent.mkdir(parents=True, exist_ok=True)\n    train.to_csv(train_path,
+          index=False)\n    test.to_csv(test_path, index=False)\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Train test split'', description='''')\n_parser.add_argument(\"--matches\",
+          dest=\"matches_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--test-split\",
+          dest=\"test_split\", type=float, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--train\",
+          dest=\"train_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parser.add_argument(\"--test\", dest=\"test_path\",
+          type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)\n_parsed_args
+          = vars(_parser.parse_args())\n\n_outputs = train_test_split(**_parsed_args)\n"],
+          "image": "python:3.7"}}, "inputs": [{"name": "matches", "type": "str"},
+          {"default": "0.2", "name": "test_split", "optional": true, "type": "Float"}],
+          "name": "Train test split", "outputs": [{"name": "train", "type": "String"},
+          {"name": "test", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"test_split": "0.2"}'}
+  - name: upload-to-gcs
+    container:
+      args: []
+      command:
+      - sh
+      - -ex
+      - -c
+      - |
+        if [ -n "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
+            gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+        fi
+        gsutil cp -r "$0" "$1"
+        mkdir -p "$(dirname "$2")"
+        echo "$1" > "$2"
+      - /tmp/inputs/Data/data
+      - '{{inputs.parameters.model_save}}'
+      - /tmp/outputs/GCS_path/data
+      image: google/cloud-sdk
+    inputs:
+      parameters:
+      - {name: model_save}
+      artifacts:
+      - {name: train-SaveModel, path: /tmp/inputs/Data/data}
+    outputs:
+      artifacts:
+      - {name: upload-to-gcs-GCS-path, path: /tmp/outputs/GCS_path/data}
+    metadata:
+      annotations: {author: Alexey Volkov <alexey.volkov@ark-kun.com>, canonical_location: 'https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml',
+        pipelines.kubeflow.org/component_spec: '{"implementation": {"container": {"command":
+          ["sh", "-ex", "-c", "if [ -n \"${GOOGLE_APPLICATION_CREDENTIALS}\" ]; then\n    gcloud
+          auth activate-service-account --key-file=\"${GOOGLE_APPLICATION_CREDENTIALS}\"\nfi\ngsutil
+          cp -r \"$0\" \"$1\"\nmkdir -p \"$(dirname \"$2\")\"\necho \"$1\" > \"$2\"\n",
+          {"inputPath": "Data"}, {"inputValue": "GCS path"}, {"outputPath": "GCS path"}],
+          "image": "google/cloud-sdk"}}, "inputs": [{"name": "Data"}, {"name": "GCS
+          path", "type": "String"}], "metadata": {"annotations": {"author": "Alexey
+          Volkov <alexey.volkov@ark-kun.com>", "canonical_location": "https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml"}},
+          "name": "Upload to GCS", "outputs": [{"name": "GCS path", "type": "String"}]}',
+        pipelines.kubeflow.org/component_ref: '{"digest": "61daabc4502f47130be4bea91df063741141cfc0fdce487246e9f095a25fd32d",
+          "url": "https://raw.githubusercontent.com/kubeflow/pipelines/c783705c0e566c611ef70160a01e3ed0865051bd/components/contrib/google-cloud/storage/upload_to_explicit_uri/component.yaml"}',
+        pipelines.kubeflow.org/arguments.parameters: '{"GCS path": "{{inputs.parameters.model_save}}"}'}
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+  arguments:
+    parameters:
+    - {name: lm, value: indobenchmark/indobert-base-p1}
+    - {name: product_input, value: 'gs://input_to_product_file'}
+    - {name: model_save, value: 'gs://ml_foodid_project/product-matching/susubert/pareto_model'}
+    - {name: keep_columns, value: '["name", "price"]'}
+    - {name: batch_size, value: '32'}
+    - {name: learning_rate, value: 2e-05}
+    - {name: num_epochs, value: '2'}
+  serviceAccountName: pipeline-runner

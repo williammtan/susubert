@@ -1,6 +1,6 @@
 import kfp
 from kfp import dsl
-from kfp.components import load_component_from_file
+from kfp.components import load_component_from_file, load_component_from_url
 import sys
 
 from utils import *
@@ -24,13 +24,14 @@ def match_pipeline(
     match_threshold: float=0.8,
     min_cluster_size: int=3,
 
-    cache_matches_table: str=None,
+    save_clusters: str='gs://ml_foodid_project/product-matching/internal/clusters.csv'
 ):
     """This pipeline will block matches and predict product matches (using cache) to create clusters."""
 
     serialize_op = load_component_from_file('serialize/component.yaml')
     blocker_op = load_component_from_file('blocker/component.yaml')
     matcher_op = load_component_from_file('matcher/component.yaml')
+    upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/c783705c0e566c611ef70160a01e3ed0865051bd/components/contrib/google-cloud/storage/upload_to_explicit_uri/component.yaml')
 
     download_sbert_task = download_model(sbert_model_id)
     download_model_task = download_model(model_id)
@@ -42,19 +43,17 @@ def match_pipeline(
     serialize_products_task = serialize_op(matches='', products=re_task.output, keepcolumns=keep_columns)
     blocker_task = blocker_op(re_task.output, serialize_products_task.output, download_sbert_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
 
-    
     serialize_matches_task = serialize_op(matches=blocker_task.output, products=re_task.output, keepcolumns=keep_columns)
 
     matcher_task = matcher_op(matches=serialize_matches_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
 
-    
-    fin_task = fin(matches=matcher_task.output, products=re_task.output, min_cluster_size=min_cluster_size).set_gpu_limit(1)
+    fin_task = fin(matches=matcher_task.output, products=re_task.output, min_cluster_size=min_cluster_size)
+    upload_task = upload_op(fin_task.output, save_clusters)
 
-    save_clusters_task = save_clusters(clusters=fin_task.output, products=re_task.output, min_cluster_size=min_cluster_size)
 
 if __name__ == '__main__':
     if sys.argv[1] == 'compile':
-        kfp.compiler.Compiler().compile(match_pipeline, 'match_pipeline.yaml')
+        kfp.compiler.Compiler().compile(match_pipeline, 'match_pipeline_dry.yaml')
     elif sys.argv[1] == 'run':
         client = kfp.Client(host='https://2286482f38de0564-dot-us-central1.pipelines.googleusercontent.com')
         client.create_run_from_pipeline_func(match_pipeline, arguments={"blocker_threshold": 0.25, "blocker_top_k": 100})

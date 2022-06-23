@@ -1,0 +1,966 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: matcher-pipeline-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline_compilation_time: '2021-12-14T14:16:05.369524',
+    pipelines.kubeflow.org/pipeline_spec: '{"description": "This pipeline will block
+      matches and predict product matches (using cache) to create clusters.", "inputs":
+      [{"default": "indobenchmark/indobert-base-p1", "name": "lm", "optional": true,
+      "type": "String"}, {"default": "1", "name": "model_id", "optional": true, "type":
+      "Integer"}, {"default": "2", "name": "sbert_model_id", "optional": true, "type":
+      "Integer"}, {"default": "32", "name": "batch_size", "optional": true, "type":
+      "Integer"}, {"default": "\n        SELECT prod.id_source as id, prod.name, prod.description,
+      prod.weight, prod.price, prod.main_category, prod.sub_category, mpc.master_product_id
+      as master_product\n        FROM food.external_temp_products_pareto prod LEFT
+      JOIN (SELECT * FROM food.master_product_clusters) mpc ON prod.id = mpc.master_product_id\n    ",
+      "name": "product_query", "optional": true, "type": "String"}, {"default": "[\"name\",
+      \"price\"]", "name": "keep_columns", "optional": true, "type": "JsonArray"},
+      {"default": "100", "name": "blocker_top_k", "optional": true, "type": "Integer"},
+      {"default": "0.25", "name": "blocker_threshold", "optional": true, "type": "Float"},
+      {"default": "0.8", "name": "match_threshold", "optional": true, "type": "Float"},
+      {"default": "3", "name": "min_cluster_size", "optional": true, "type": "Integer"},
+      {"default": "gs://ml_foodid_project/product-matching/internal/clusters.csv",
+      "name": "save_clusters", "optional": true, "type": "String"}], "name": "matcher
+      pipeline"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4}
+spec:
+  entrypoint: matcher-pipeline
+  templates:
+  - name: blocker
+    container:
+      args: []
+      command: [python, blocker.py, --products, /tmp/inputs/Products/data, --serialized-products,
+        /tmp/inputs/SerializedProducts/data, --s-bert, /tmp/inputs/SbertModel/data,
+        --top-k, '{{inputs.parameters.blocker_top_k}}', --threshold, '{{inputs.parameters.blocker_threshold}}',
+        --save-matches, /tmp/outputs/SaveMatches/data]
+      image: gcr.io/food-id-app/susubert/blocker:latest
+      resources:
+        limits: {nvidia.com/gpu: 1}
+    inputs:
+      parameters:
+      - {name: blocker_threshold}
+      - {name: blocker_top_k}
+      artifacts:
+      - {name: product-regex-output, path: /tmp/inputs/Products/data}
+      - {name: download-model-model_save, path: /tmp/inputs/SbertModel/data}
+      - {name: serialize-SaveMatches, path: /tmp/inputs/SerializedProducts/data}
+    outputs:
+      artifacts:
+      - {name: blocker-SaveMatches, path: /tmp/outputs/SaveMatches/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Blocks
+          possible combinations of matches", "implementation": {"container": {"command":
+          ["python", "blocker.py", "--products", {"inputPath": "Products"}, "--serialized-products",
+          {"inputPath": "SerializedProducts"}, "--s-bert", {"inputPath": "SbertModel"},
+          "--top-k", {"inputValue": "TopK"}, "--threshold", {"inputValue": "Threshold"},
+          "--save-matches", {"outputPath": "SaveMatches"}], "image": "gcr.io/food-id-app/susubert/blocker:latest"}},
+          "inputs": [{"description": "CSV file to products", "name": "Products"},
+          {"description": "CSV file to serialized products", "name": "SerializedProducts"},
+          {"description": "Path to s-bert model", "name": "SbertModel"}, {"description":
+          "Top K neighbours to search", "name": "TopK", "type": "Integer"}, {"description":
+          "Threshold for blocking", "name": "Threshold", "type": "Float"}], "name":
+          "Blocker", "outputs": [{"description": "Path to save trained model", "name":
+          "SaveMatches"}]}', pipelines.kubeflow.org/component_ref: '{"digest": "798660a58b862bcaa72058e406957bb334a6902c93b5e5000d3635b21aad7a06",
+          "url": "blocker/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"Threshold":
+          "{{inputs.parameters.blocker_threshold}}", "TopK": "{{inputs.parameters.blocker_top_k}}"}'}
+  - name: download-model
+    container:
+      args: [--model-id, '{{inputs.parameters.sbert_model_id}}', --model-save, /tmp/outputs/model_save/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'sqlalchemy' 'pandas' 'pymysql' 'google-cloud-storage' || PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet --no-warn-script-location 'sqlalchemy' 'pandas'
+        'pymysql' 'google-cloud-storage' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def download_model(
+            model_id,
+            model_save
+            ):
+            from sqlalchemy import create_engine
+            from google.cloud import storage
+            from pathlib import Path
+            import pandas as pd
+            import os
+
+            db_connection_str = os.environ['SQL_ENDPOINT']
+            db_connection = create_engine(db_connection_str)
+            db_connection.connect()
+
+            model_blob = pd.read_sql(f"SELECT * FROM food.ml_models WHERE id = {model_id}", db_connection).iloc[0].blob
+            bucket_name = model_blob.split('/')[2]
+            blob_name = model_blob.split(bucket_name + '/')[-1]
+
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(bucket_name)
+
+            if len(list(bucket.list_blobs(prefix=blob_name))) == 0:
+                # checks if the blob exists (folder or file)
+                raise Exception('Model blob doesn\'t exists')
+
+            for b in bucket.list_blobs(prefix=blob_name):
+                local_path = model_save + b.name.replace(blob_name, '')
+                Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+                b.download_to_filename(local_path)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Download model', description='')
+        _parser.add_argument("--model-id", dest="model_id", type=int, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--model-save", dest="model_save", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = download_model(**_parsed_args)
+      env:
+      - {name: SQL_ENDPOINT, value: 'mysql+pymysql://foodid:foodnetwork@10.2.100.8:3306/food'}
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: sbert_model_id}
+    outputs:
+      artifacts:
+      - {name: download-model-model_save, path: /tmp/outputs/model_save/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--model-id", {"inputValue": "model_id"}, "--model-save", {"outputPath":
+          "model_save"}], "command": ["sh", "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''sqlalchemy''
+          ''pandas'' ''pymysql'' ''google-cloud-storage'' || PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''sqlalchemy''
+          ''pandas'' ''pymysql'' ''google-cloud-storage'' --user) && \"$0\" \"$@\"",
+          "sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef download_model(\n    model_id,\n    model_save\n    ):\n    from
+          sqlalchemy import create_engine\n    from google.cloud import storage\n    from
+          pathlib import Path\n    import pandas as pd\n    import os\n\n    db_connection_str
+          = os.environ[''SQL_ENDPOINT'']\n    db_connection = create_engine(db_connection_str)\n    db_connection.connect()\n\n    model_blob
+          = pd.read_sql(f\"SELECT * FROM food.ml_models WHERE id = {model_id}\", db_connection).iloc[0].blob\n    bucket_name
+          = model_blob.split(''/'')[2]\n    blob_name = model_blob.split(bucket_name
+          + ''/'')[-1]\n\n    storage_client = storage.Client()\n    bucket = storage_client.bucket(bucket_name)\n\n    if
+          len(list(bucket.list_blobs(prefix=blob_name))) == 0:\n        # checks if
+          the blob exists (folder or file)\n        raise Exception(''Model blob doesn\\''t
+          exists'')\n\n    for b in bucket.list_blobs(prefix=blob_name):\n        local_path
+          = model_save + b.name.replace(blob_name, '''')\n        Path(local_path).parent.mkdir(parents=True,
+          exist_ok=True)\n        b.download_to_filename(local_path)\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Download model'', description='''')\n_parser.add_argument(\"--model-id\",
+          dest=\"model_id\", type=int, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--model-save\",
+          dest=\"model_save\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = download_model(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs":
+          [{"name": "model_id", "type": "Integer"}], "name": "Download model", "outputs":
+          [{"name": "model_save", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"model_id": "{{inputs.parameters.sbert_model_id}}"}'}
+  - name: download-model-2
+    container:
+      args: [--model-id, '{{inputs.parameters.model_id}}', --model-save, /tmp/outputs/model_save/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'sqlalchemy' 'pandas' 'pymysql' 'google-cloud-storage' || PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet --no-warn-script-location 'sqlalchemy' 'pandas'
+        'pymysql' 'google-cloud-storage' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def download_model(
+            model_id,
+            model_save
+            ):
+            from sqlalchemy import create_engine
+            from google.cloud import storage
+            from pathlib import Path
+            import pandas as pd
+            import os
+
+            db_connection_str = os.environ['SQL_ENDPOINT']
+            db_connection = create_engine(db_connection_str)
+            db_connection.connect()
+
+            model_blob = pd.read_sql(f"SELECT * FROM food.ml_models WHERE id = {model_id}", db_connection).iloc[0].blob
+            bucket_name = model_blob.split('/')[2]
+            blob_name = model_blob.split(bucket_name + '/')[-1]
+
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(bucket_name)
+
+            if len(list(bucket.list_blobs(prefix=blob_name))) == 0:
+                # checks if the blob exists (folder or file)
+                raise Exception('Model blob doesn\'t exists')
+
+            for b in bucket.list_blobs(prefix=blob_name):
+                local_path = model_save + b.name.replace(blob_name, '')
+                Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+                b.download_to_filename(local_path)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Download model', description='')
+        _parser.add_argument("--model-id", dest="model_id", type=int, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--model-save", dest="model_save", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = download_model(**_parsed_args)
+      env:
+      - {name: SQL_ENDPOINT, value: 'mysql+pymysql://foodid:foodnetwork@10.2.100.8:3306/food'}
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: model_id}
+    outputs:
+      artifacts:
+      - {name: download-model-2-model_save, path: /tmp/outputs/model_save/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--model-id", {"inputValue": "model_id"}, "--model-save", {"outputPath":
+          "model_save"}], "command": ["sh", "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''sqlalchemy''
+          ''pandas'' ''pymysql'' ''google-cloud-storage'' || PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''sqlalchemy''
+          ''pandas'' ''pymysql'' ''google-cloud-storage'' --user) && \"$0\" \"$@\"",
+          "sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef download_model(\n    model_id,\n    model_save\n    ):\n    from
+          sqlalchemy import create_engine\n    from google.cloud import storage\n    from
+          pathlib import Path\n    import pandas as pd\n    import os\n\n    db_connection_str
+          = os.environ[''SQL_ENDPOINT'']\n    db_connection = create_engine(db_connection_str)\n    db_connection.connect()\n\n    model_blob
+          = pd.read_sql(f\"SELECT * FROM food.ml_models WHERE id = {model_id}\", db_connection).iloc[0].blob\n    bucket_name
+          = model_blob.split(''/'')[2]\n    blob_name = model_blob.split(bucket_name
+          + ''/'')[-1]\n\n    storage_client = storage.Client()\n    bucket = storage_client.bucket(bucket_name)\n\n    if
+          len(list(bucket.list_blobs(prefix=blob_name))) == 0:\n        # checks if
+          the blob exists (folder or file)\n        raise Exception(''Model blob doesn\\''t
+          exists'')\n\n    for b in bucket.list_blobs(prefix=blob_name):\n        local_path
+          = model_save + b.name.replace(blob_name, '''')\n        Path(local_path).parent.mkdir(parents=True,
+          exist_ok=True)\n        b.download_to_filename(local_path)\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Download model'', description='''')\n_parser.add_argument(\"--model-id\",
+          dest=\"model_id\", type=int, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--model-save\",
+          dest=\"model_save\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = download_model(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs":
+          [{"name": "model_id", "type": "Integer"}], "name": "Download model", "outputs":
+          [{"name": "model_save", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"model_id": "{{inputs.parameters.model_id}}"}'}
+  - name: fin
+    container:
+      args: [--matches, /tmp/inputs/matches/data, --products, /tmp/inputs/products/data,
+        --min-cluster-size, '{{inputs.parameters.min_cluster_size}}', --fin, /tmp/outputs/fin/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'python-igraph' 'numpy' 'pandas' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3
+        -m pip install --quiet --no-warn-script-location 'python-igraph' 'numpy' 'pandas'
+        --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n \
+        \   os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return file_path\n\
+        \ndef fin(\n    matches_path, \n    products_path, \n    fin_path,\n    min_cluster_size=3\n\
+        \    ):\n    from igraph import Graph\n    from pathlib import Path\n\n  \
+        \  import pandas as pd\n    import numpy as np\n\n    matches = pd.read_csv(matches_path).dropna()\n\
+        \    products = pd.read_csv(products_path)\n\n    g = Graph()\n    g.add_vertices(len(products))\n\
+        \n    id_mapping = dict(zip(products.id, range(len(products))))\n    match_pairs\
+        \ = np.array([(id_mapping[match.id1], id_mapping[match.id2]) for _, match\
+        \ in matches.iterrows() if match.match == 1])\n    g.add_edges(match_pairs)\n\
+        \n    g.vs['id'] = products.id.values\n    g.vs['name'] = products.id.name\n\
+        \n    clusters = []\n    cluster_i = 0\n    for c in g.clusters():\n     \
+        \   if len(c) > min_cluster_size:\n            for p in c:\n             \
+        \   clusters.append({\n                    \"id\": g.vs[p].attributes()['id'],\n\
+        \                    \"cluster\": cluster_i\n            })\n            cluster_i\
+        \ += 1\n    clusters = pd.DataFrame(clusters)\n\n    Path(fin_path).parent.mkdir(parents=True,\
+        \ exist_ok=True)\n    clusters.to_csv(fin_path, index=False)\n\nimport argparse\n\
+        _parser = argparse.ArgumentParser(prog='Fin', description='')\n_parser.add_argument(\"\
+        --matches\", dest=\"matches_path\", type=str, required=True, default=argparse.SUPPRESS)\n\
+        _parser.add_argument(\"--products\", dest=\"products_path\", type=str, required=True,\
+        \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--min-cluster-size\"\
+        , dest=\"min_cluster_size\", type=int, required=False, default=argparse.SUPPRESS)\n\
+        _parser.add_argument(\"--fin\", dest=\"fin_path\", type=_make_parent_dirs_and_return_path,\
+        \ required=True, default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\
+        \n_outputs = fin(**_parsed_args)\n"
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: min_cluster_size}
+      artifacts:
+      - {name: matcher-SaveMatches, path: /tmp/inputs/matches/data}
+      - {name: product-regex-output, path: /tmp/inputs/products/data}
+    outputs:
+      artifacts:
+      - {name: fin-fin, path: /tmp/outputs/fin/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--matches", {"inputPath": "matches"}, "--products", {"inputPath":
+          "products"}, {"if": {"cond": {"isPresent": "min_cluster_size"}, "then":
+          ["--min-cluster-size", {"inputValue": "min_cluster_size"}]}}, "--fin", {"outputPath":
+          "fin"}], "command": ["sh", "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1 python3
+          -m pip install --quiet --no-warn-script-location ''python-igraph'' ''numpy''
+          ''pandas'' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
+          --no-warn-script-location ''python-igraph'' ''numpy'' ''pandas'' --user)
+          && \"$0\" \"$@\"", "sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\"
+          > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef fin(\n    matches_path, \n    products_path, \n    fin_path,\n    min_cluster_size=3\n    ):\n    from
+          igraph import Graph\n    from pathlib import Path\n\n    import pandas as
+          pd\n    import numpy as np\n\n    matches = pd.read_csv(matches_path).dropna()\n    products
+          = pd.read_csv(products_path)\n\n    g = Graph()\n    g.add_vertices(len(products))\n\n    id_mapping
+          = dict(zip(products.id, range(len(products))))\n    match_pairs = np.array([(id_mapping[match.id1],
+          id_mapping[match.id2]) for _, match in matches.iterrows() if match.match
+          == 1])\n    g.add_edges(match_pairs)\n\n    g.vs[''id''] = products.id.values\n    g.vs[''name'']
+          = products.id.name\n\n    clusters = []\n    cluster_i = 0\n    for c in
+          g.clusters():\n        if len(c) > min_cluster_size:\n            for p
+          in c:\n                clusters.append({\n                    \"id\": g.vs[p].attributes()[''id''],\n                    \"cluster\":
+          cluster_i\n            })\n            cluster_i += 1\n    clusters = pd.DataFrame(clusters)\n\n    Path(fin_path).parent.mkdir(parents=True,
+          exist_ok=True)\n    clusters.to_csv(fin_path, index=False)\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Fin'', description='''')\n_parser.add_argument(\"--matches\",
+          dest=\"matches_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--products\",
+          dest=\"products_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--min-cluster-size\",
+          dest=\"min_cluster_size\", type=int, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--fin\",
+          dest=\"fin_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = fin(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs": [{"name":
+          "matches", "type": "String"}, {"name": "products", "type": "String"}, {"default":
+          "3", "name": "min_cluster_size", "optional": true, "type": "Integer"}],
+          "name": "Fin", "outputs": [{"name": "fin", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"min_cluster_size": "{{inputs.parameters.min_cluster_size}}"}'}
+  - name: matcher
+    container:
+      args: []
+      command: [python, matcher.py, --matches, /tmp/inputs/Matches/data, --lm, '{{inputs.parameters.lm}}',
+        --model, /tmp/inputs/Model/data, --batch-size, '{{inputs.parameters.batch_size}}',
+        --threshold, '{{inputs.parameters.match_threshold}}', --save-matches, /tmp/outputs/SaveMatches/data]
+      image: gcr.io/food-id-app/susubert/matcher:latest
+      resources:
+        limits: {nvidia.com/gpu: 1}
+    inputs:
+      parameters:
+      - {name: batch_size}
+      - {name: lm}
+      - {name: match_threshold}
+      artifacts:
+      - {name: serialize-2-SaveMatches, path: /tmp/inputs/Matches/data}
+      - {name: download-model-2-model_save, path: /tmp/inputs/Model/data}
+    outputs:
+      artifacts:
+      - {name: matcher-SaveMatches, path: /tmp/outputs/SaveMatches/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Predicts
+          matches using the BERT model", "implementation": {"container": {"command":
+          ["python", "matcher.py", "--matches", {"inputPath": "Matches"}, "--lm",
+          {"inputValue": "LM"}, "--model", {"inputPath": "Model"}, "--batch-size",
+          {"inputValue": "BatchSize"}, "--threshold", {"inputValue": "Threshold"},
+          "--save-matches", {"outputPath": "SaveMatches"}], "image": "gcr.io/food-id-app/susubert/matcher:latest"}},
+          "inputs": [{"description": "CSV file to serizalized match pairs", "name":
+          "Matches"}, {"description": "Hugginface language model", "name": "LM", "type":
+          "String"}, {"description": "Path to trained model", "name": "Model"}, {"description":
+          "Training batch size", "name": "BatchSize", "type": "Integer"}, {"description":
+          "Threshold to classify as a match", "name": "Threshold", "type": "Float"}],
+          "name": "Matcher", "outputs": [{"description": "Path to save predicted matches",
+          "name": "SaveMatches"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "3c88c54581d962a64463236fb63c46ca36eb332382cf979e6ffbd8312c8f6cd4", "url":
+          "matcher/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"BatchSize":
+          "{{inputs.parameters.batch_size}}", "LM": "{{inputs.parameters.lm}}", "Threshold":
+          "{{inputs.parameters.match_threshold}}"}'}
+  - name: matcher-pipeline
+    inputs:
+      parameters:
+      - {name: batch_size}
+      - {name: blocker_threshold}
+      - {name: blocker_top_k}
+      - {name: keep_columns}
+      - {name: lm}
+      - {name: match_threshold}
+      - {name: min_cluster_size}
+      - {name: model_id}
+      - {name: product_query}
+      - {name: save_clusters}
+      - {name: sbert_model_id}
+    dag:
+      tasks:
+      - name: blocker
+        template: blocker
+        dependencies: [download-model, product-regex, serialize]
+        arguments:
+          parameters:
+          - {name: blocker_threshold, value: '{{inputs.parameters.blocker_threshold}}'}
+          - {name: blocker_top_k, value: '{{inputs.parameters.blocker_top_k}}'}
+          artifacts:
+          - {name: download-model-model_save, from: '{{tasks.download-model.outputs.artifacts.download-model-model_save}}'}
+          - {name: product-regex-output, from: '{{tasks.product-regex.outputs.artifacts.product-regex-output}}'}
+          - {name: serialize-SaveMatches, from: '{{tasks.serialize.outputs.artifacts.serialize-SaveMatches}}'}
+      - name: download-model
+        template: download-model
+        arguments:
+          parameters:
+          - {name: sbert_model_id, value: '{{inputs.parameters.sbert_model_id}}'}
+      - name: download-model-2
+        template: download-model-2
+        arguments:
+          parameters:
+          - {name: model_id, value: '{{inputs.parameters.model_id}}'}
+      - name: fin
+        template: fin
+        dependencies: [matcher, product-regex]
+        arguments:
+          parameters:
+          - {name: min_cluster_size, value: '{{inputs.parameters.min_cluster_size}}'}
+          artifacts:
+          - {name: matcher-SaveMatches, from: '{{tasks.matcher.outputs.artifacts.matcher-SaveMatches}}'}
+          - {name: product-regex-output, from: '{{tasks.product-regex.outputs.artifacts.product-regex-output}}'}
+      - name: matcher
+        template: matcher
+        dependencies: [download-model-2, serialize-2]
+        arguments:
+          parameters:
+          - {name: batch_size, value: '{{inputs.parameters.batch_size}}'}
+          - {name: lm, value: '{{inputs.parameters.lm}}'}
+          - {name: match_threshold, value: '{{inputs.parameters.match_threshold}}'}
+          artifacts:
+          - {name: download-model-2-model_save, from: '{{tasks.download-model-2.outputs.artifacts.download-model-2-model_save}}'}
+          - {name: serialize-2-SaveMatches, from: '{{tasks.serialize-2.outputs.artifacts.serialize-2-SaveMatches}}'}
+      - name: preprocess
+        template: preprocess
+        dependencies: [query-rds]
+        arguments:
+          artifacts:
+          - {name: query-rds-save_query, from: '{{tasks.query-rds.outputs.artifacts.query-rds-save_query}}'}
+      - name: product-regex
+        template: product-regex
+        dependencies: [preprocess]
+        arguments:
+          artifacts:
+          - {name: preprocess-products, from: '{{tasks.preprocess.outputs.artifacts.preprocess-products}}'}
+      - name: query-rds
+        template: query-rds
+        arguments:
+          parameters:
+          - {name: product_query, value: '{{inputs.parameters.product_query}}'}
+      - name: serialize
+        template: serialize
+        dependencies: [product-regex]
+        arguments:
+          parameters:
+          - {name: keep_columns, value: '{{inputs.parameters.keep_columns}}'}
+          artifacts:
+          - {name: product-regex-output, from: '{{tasks.product-regex.outputs.artifacts.product-regex-output}}'}
+      - name: serialize-2
+        template: serialize-2
+        dependencies: [blocker, product-regex]
+        arguments:
+          parameters:
+          - {name: keep_columns, value: '{{inputs.parameters.keep_columns}}'}
+          artifacts:
+          - {name: blocker-SaveMatches, from: '{{tasks.blocker.outputs.artifacts.blocker-SaveMatches}}'}
+          - {name: product-regex-output, from: '{{tasks.product-regex.outputs.artifacts.product-regex-output}}'}
+      - name: upload-to-gcs
+        template: upload-to-gcs
+        dependencies: [fin]
+        arguments:
+          parameters:
+          - {name: save_clusters, value: '{{inputs.parameters.save_clusters}}'}
+          artifacts:
+          - {name: fin-fin, from: '{{tasks.fin.outputs.artifacts.fin-fin}}'}
+  - name: preprocess
+    container:
+      args: [--input, /tmp/inputs/input/data, --products, /tmp/outputs/products/data,
+        --master-products, /tmp/outputs/master_products/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'pandas' 'sqlalchemy' 'pymysql' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3
+        -m pip install --quiet --no-warn-script-location 'pandas' 'sqlalchemy' 'pymysql'
+        --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def preprocess(input_path, products_path, master_products_path):
+            from sqlalchemy import create_engine
+            from pathlib import Path
+            import pandas as pd
+            import os
+
+            db_connection_str = os.environ['SQL_ENDPOINT']
+            db_connection = create_engine(db_connection_str)
+            db_connection.connect()
+
+            products = pd.read_csv(input_path).drop_duplicates(subset='id')
+            products = products.dropna(subset=['id', 'name', 'description'])
+
+            if 'master_product_id' in products.columns:
+                def re_display_unit(mp):
+                    string = ''
+                    if mp.quantity != 0:
+                        string += f' {int(mp.quantity)} x'
+                    if mp.volume != 0:
+                        volume = int(mp.volume) if round(mp.volume) == mp.volume else mp.volume
+                        string += f' {int(mp.volume)} {mp.uom}'
+                    elif mp.weight != 0:
+                        weight = int(mp.weight) if round(mp.weight) == mp.weight else mp.weight
+                        string += f' {int(mp.weight)} {mp.uom}'
+                    return string
+
+                master_products = pd.read_sql('SELECT id, name, description, weight, volume, quantity, uom FROM master_products WHERE is_deleted = 0', db_connection)
+                master_products['display_unit'] = master_products.apply(re_display_unit, axis=1)
+                master_products['base'] = master_products.apply(lambda x: x['name'].replace(x.display_unit, ''), axis=1)
+                print(master_products.name)
+                print(master_products[['id', 'name', 'base']].rename(columns={'id': 'master_product_id', 'name': 'master_product', 'base': 'master_product_base'}).info())
+
+                products = products.merge(master_products[['id', 'name', 'base']].rename(columns={'id': 'master_product_id', 'name': 'master_product', 'base': 'master_product_base'}), how='left', on='master_product_id')
+
+                Path(master_products_path).parent.mkdir(parents=True, exist_ok=True)
+                products.dropna(subset=['master_product']).to_csv(master_products_path, index=False)
+            else:
+                open(master_products_path, 'w')
+
+            Path(products_path).parent.mkdir(parents=True, exist_ok=True)
+            products.to_csv(products_path, index=False)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Preprocess', description='')
+        _parser.add_argument("--input", dest="input_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--products", dest="products_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--master-products", dest="master_products_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = preprocess(**_parsed_args)
+      env:
+      - {name: SQL_ENDPOINT, value: 'mysql+pymysql://foodid:foodnetwork@10.2.100.8:3306/food'}
+      image: python:3.7
+    inputs:
+      artifacts:
+      - {name: query-rds-save_query, path: /tmp/inputs/input/data}
+    outputs:
+      artifacts:
+      - {name: preprocess-master_products, path: /tmp/outputs/master_products/data}
+      - {name: preprocess-products, path: /tmp/outputs/products/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--input", {"inputPath": "input"}, "--products", {"outputPath":
+          "products"}, "--master-products", {"outputPath": "master_products"}], "command":
+          ["sh", "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
+          --no-warn-script-location ''pandas'' ''sqlalchemy'' ''pymysql'' || PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''pandas'' ''sqlalchemy''
+          ''pymysql'' --user) && \"$0\" \"$@\"", "sh", "-ec", "program_path=$(mktemp)\nprintf
+          \"%s\" \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n",
+          "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n    os.makedirs(os.path.dirname(file_path),
+          exist_ok=True)\n    return file_path\n\ndef preprocess(input_path, products_path,
+          master_products_path):\n    from sqlalchemy import create_engine\n    from
+          pathlib import Path\n    import pandas as pd\n    import os\n\n    db_connection_str
+          = os.environ[''SQL_ENDPOINT'']\n    db_connection = create_engine(db_connection_str)\n    db_connection.connect()\n\n    products
+          = pd.read_csv(input_path).drop_duplicates(subset=''id'')\n    products =
+          products.dropna(subset=[''id'', ''name'', ''description''])\n\n    if ''master_product_id''
+          in products.columns:\n        def re_display_unit(mp):\n            string
+          = ''''\n            if mp.quantity != 0:\n                string += f''
+          {int(mp.quantity)} x''\n            if mp.volume != 0:\n                volume
+          = int(mp.volume) if round(mp.volume) == mp.volume else mp.volume\n                string
+          += f'' {int(mp.volume)} {mp.uom}''\n            elif mp.weight != 0:\n                weight
+          = int(mp.weight) if round(mp.weight) == mp.weight else mp.weight\n                string
+          += f'' {int(mp.weight)} {mp.uom}''\n            return string\n\n        master_products
+          = pd.read_sql(''SELECT id, name, description, weight, volume, quantity,
+          uom FROM master_products WHERE is_deleted = 0'', db_connection)\n        master_products[''display_unit'']
+          = master_products.apply(re_display_unit, axis=1)\n        master_products[''base'']
+          = master_products.apply(lambda x: x[''name''].replace(x.display_unit, ''''),
+          axis=1)\n        print(master_products.name)\n        print(master_products[[''id'',
+          ''name'', ''base'']].rename(columns={''id'': ''master_product_id'', ''name'':
+          ''master_product'', ''base'': ''master_product_base''}).info())\n\n        products
+          = products.merge(master_products[[''id'', ''name'', ''base'']].rename(columns={''id'':
+          ''master_product_id'', ''name'': ''master_product'', ''base'': ''master_product_base''}),
+          how=''left'', on=''master_product_id'')\n\n        Path(master_products_path).parent.mkdir(parents=True,
+          exist_ok=True)\n        products.dropna(subset=[''master_product'']).to_csv(master_products_path,
+          index=False)\n    else:\n        open(master_products_path, ''w'')\n\n    Path(products_path).parent.mkdir(parents=True,
+          exist_ok=True)\n    products.to_csv(products_path, index=False)\n\nimport
+          argparse\n_parser = argparse.ArgumentParser(prog=''Preprocess'', description='''')\n_parser.add_argument(\"--input\",
+          dest=\"input_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--products\",
+          dest=\"products_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parser.add_argument(\"--master-products\",
+          dest=\"master_products_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = preprocess(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs": [{"name":
+          "input", "type": "String"}], "name": "Preprocess", "outputs": [{"name":
+          "products", "type": "String"}, {"name": "master_products", "type": "String"}]}',
+        pipelines.kubeflow.org/component_ref: '{}'}
+  - name: product-regex
+    container:
+      args: [--products, /tmp/inputs/products/data, --output, /tmp/outputs/output/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'pandas' || PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet
+        --no-warn-script-location 'pandas' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def product_regex(products_path, output_path):
+            import pandas as pd
+            from pathlib import Path
+            import re
+
+            def get_digits(match):
+                digits = re.search('\d+', match.group())
+                if digits:
+                    return int(digits.group())
+                else:
+                    return None
+
+            def re_quantity(string):
+                quantity = re.search(r'(isi(?: |)\d+|x(?: |)\d+|\d+(?: |)(?:pcs|pc|kaleng|sachet|pack|(?: |)x)) ', string)
+                if not quantity:
+                    quantity = re.search(r'\d+(?: |)(?:karton|dus)', string)
+                    if quantity:
+                        quantity = 12
+                    else:
+                        quantity = 1
+                else:
+                    quantity = get_digits(quantity)
+                return quantity
+
+            def re_volume(string):
+                volume = re.search(r'\d{2,}(?: |)ml ', string)
+                if not volume:
+                    volume = re.search(r'\d+(?: |)(?:l|lt|ltr|liter) ', string)
+                    if volume:
+                        volume = get_digits(volume) * 1000
+                    else:
+                        volume = None
+                else:
+                    volume = get_digits(volume)
+                    return volume
+
+            def re_weight(string):
+                weight = re.search(r'\d{2,}(?: |)(?:g|gr|gram) ', string)
+                if not weight:
+                    weight = re.search(r'\d+(?: |)(?:|kg|kilogram|kilo) ', string)
+                    if weight:
+                        weight = get_digits(weight) * 1000
+                    else:
+                        weight = None
+                else:
+                    weight = get_digits(weight)
+                return weight
+
+            products = pd.read_csv(products_path)
+            products['name_description'] = (products['name'] + ' ' + products['description']).str.lower()
+
+            products['quantity'] = products.name_description.apply(re_quantity)
+            products['volume'] = products.name_description.apply(re_volume).astype('Int64')
+            products['weight'] = products.name_description.apply(re_weight).astype('Int64')
+            products.drop(columns='name_description')
+
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            products.to_csv(output_path, index=False)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Product regex', description='')
+        _parser.add_argument("--products", dest="products_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--output", dest="output_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = product_regex(**_parsed_args)
+      image: python:3.7
+    inputs:
+      artifacts:
+      - {name: preprocess-products, path: /tmp/inputs/products/data}
+    outputs:
+      artifacts:
+      - {name: product-regex-output, path: /tmp/outputs/output/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--products", {"inputPath": "products"}, "--output", {"outputPath":
+          "output"}], "command": ["sh", "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1 python3
+          -m pip install --quiet --no-warn-script-location ''pandas'' || PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''pandas'' --user)
+          && \"$0\" \"$@\"", "sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\"
+          > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef product_regex(products_path, output_path):\n    import
+          pandas as pd\n    from pathlib import Path\n    import re\n\n    def get_digits(match):\n        digits
+          = re.search(''\\d+'', match.group())\n        if digits:\n            return
+          int(digits.group())\n        else:\n            return None\n\n    def re_quantity(string):\n        quantity
+          = re.search(r''(isi(?: |)\\d+|x(?: |)\\d+|\\d+(?: |)(?:pcs|pc|kaleng|sachet|pack|(?:
+          |)x)) '', string)\n        if not quantity:\n            quantity = re.search(r''\\d+(?:
+          |)(?:karton|dus)'', string)\n            if quantity:\n                quantity
+          = 12\n            else:\n                quantity = 1\n        else:\n            quantity
+          = get_digits(quantity)\n        return quantity\n\n    def re_volume(string):\n        volume
+          = re.search(r''\\d{2,}(?: |)ml '', string)\n        if not volume:\n            volume
+          = re.search(r''\\d+(?: |)(?:l|lt|ltr|liter) '', string)\n            if
+          volume:\n                volume = get_digits(volume) * 1000\n            else:\n                volume
+          = None\n        else:\n            volume = get_digits(volume)\n            return
+          volume\n\n    def re_weight(string):\n        weight = re.search(r''\\d{2,}(?:
+          |)(?:g|gr|gram) '', string)\n        if not weight:\n            weight
+          = re.search(r''\\d+(?: |)(?:|kg|kilogram|kilo) '', string)\n            if
+          weight:\n                weight = get_digits(weight) * 1000\n            else:\n                weight
+          = None\n        else:\n            weight = get_digits(weight)\n        return
+          weight\n\n    products = pd.read_csv(products_path)\n    products[''name_description'']
+          = (products[''name''] + '' '' + products[''description'']).str.lower()\n\n    products[''quantity'']
+          = products.name_description.apply(re_quantity)\n    products[''volume'']
+          = products.name_description.apply(re_volume).astype(''Int64'')\n    products[''weight'']
+          = products.name_description.apply(re_weight).astype(''Int64'')\n    products.drop(columns=''name_description'')\n\n    Path(output_path).parent.mkdir(parents=True,
+          exist_ok=True)\n    products.to_csv(output_path, index=False)\n\nimport
+          argparse\n_parser = argparse.ArgumentParser(prog=''Product regex'', description='''')\n_parser.add_argument(\"--products\",
+          dest=\"products_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--output\",
+          dest=\"output_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = product_regex(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs":
+          [{"name": "products", "type": "String"}], "name": "Product regex", "outputs":
+          [{"name": "output", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}'}
+  - name: query-rds
+    container:
+      args: [--query, '{{inputs.parameters.product_query}}', --save-query, /tmp/outputs/save_query/data]
+      command:
+      - sh
+      - -c
+      - (PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+        'sqlalchemy' 'pandas' 'pymysql' 'requests' || PIP_DISABLE_PIP_VERSION_CHECK=1
+        python3 -m pip install --quiet --no-warn-script-location 'sqlalchemy' 'pandas'
+        'pymysql' 'requests' --user) && "$0" "$@"
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def query_rds(
+            save_query_path,
+            query='SELECT * FROM master_product_clusters'
+            ):
+            from sqlalchemy import create_engine
+            from pathlib import Path
+            import requests
+            import pandas as pd
+            import os
+
+            print(requests.get('http://httpbin.org/ip').text)
+
+            db_connection_str = os.environ['SQL_ENDPOINT']
+            db_connection = create_engine(db_connection_str)
+            db_connection.connect()
+            df = pd.read_sql(query, con=db_connection)
+
+            Path(save_query_path).parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(save_query_path, index=False)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Query rds', description='')
+        _parser.add_argument("--query", dest="query", type=str, required=False, default=argparse.SUPPRESS)
+        _parser.add_argument("--save-query", dest="save_query_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = query_rds(**_parsed_args)
+      env:
+      - {name: SQL_ENDPOINT, value: 'mysql+pymysql://foodid:foodnetwork@10.2.100.8:3306/food'}
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: product_query}
+    outputs:
+      artifacts:
+      - {name: query-rds-save_query, path: /tmp/outputs/save_query/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": [{"if": {"cond": {"isPresent": "query"}, "then": ["--query", {"inputValue":
+          "query"}]}}, "--save-query", {"outputPath": "save_query"}], "command": ["sh",
+          "-c", "(PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location
+          ''sqlalchemy'' ''pandas'' ''pymysql'' ''requests'' || PIP_DISABLE_PIP_VERSION_CHECK=1
+          python3 -m pip install --quiet --no-warn-script-location ''sqlalchemy''
+          ''pandas'' ''pymysql'' ''requests'' --user) && \"$0\" \"$@\"", "sh", "-ec",
+          "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef query_rds(\n    save_query_path,\n    query=''SELECT *
+          FROM master_product_clusters''\n    ):\n    from sqlalchemy import create_engine\n    from
+          pathlib import Path\n    import requests\n    import pandas as pd\n    import
+          os\n\n    print(requests.get(''http://httpbin.org/ip'').text)\n\n    db_connection_str
+          = os.environ[''SQL_ENDPOINT'']\n    db_connection = create_engine(db_connection_str)\n    db_connection.connect()\n    df
+          = pd.read_sql(query, con=db_connection)\n\n    Path(save_query_path).parent.mkdir(parents=True,
+          exist_ok=True)\n    df.to_csv(save_query_path, index=False)\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Query rds'', description='''')\n_parser.add_argument(\"--query\",
+          dest=\"query\", type=str, required=False, default=argparse.SUPPRESS)\n_parser.add_argument(\"--save-query\",
+          dest=\"save_query_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = query_rds(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs": [{"default":
+          "SELECT * FROM master_product_clusters", "name": "query", "optional": true,
+          "type": "String"}], "name": "Query rds", "outputs": [{"name": "save_query",
+          "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}', pipelines.kubeflow.org/arguments.parameters: '{"query":
+          "{{inputs.parameters.product_query}}"}', pipelines.kubeflow.org/max_cache_staleness: P0D}
+  - name: serialize
+    container:
+      args: []
+      command: [python, serialize.py, --matches, /tmp/inputs/Matches/data, --products,
+        /tmp/inputs/Products/data, --keep-columns, '{{inputs.parameters.keep_columns}}',
+        --save-matches, /tmp/outputs/SaveMatches/data]
+      image: gcr.io/food-id-app/susubert/serialize:latest
+    inputs:
+      parameters:
+      - {name: keep_columns}
+      artifacts:
+      - name: Matches
+        path: /tmp/inputs/Matches/data
+        raw: {data: ''}
+      - {name: product-regex-output, path: /tmp/inputs/Products/data}
+    outputs:
+      artifacts:
+      - {name: serialize-SaveMatches, path: /tmp/outputs/SaveMatches/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Serializes
+          match pairs in [COL] [VAL] format", "implementation": {"container": {"command":
+          ["python", "serialize.py", "--matches", {"inputPath": "Matches"}, "--products",
+          {"inputPath": "Products"}, "--keep-columns", {"inputValue": "KeepColumns"},
+          "--save-matches", {"outputPath": "SaveMatches"}], "image": "gcr.io/food-id-app/susubert/serialize:latest"}},
+          "inputs": [{"description": "CSV file to match pairs", "name": "Matches"},
+          {"description": "CSV file to products", "name": "Products"}, {"description":
+          "List of columns to include", "name": "KeepColumns", "type": "JsonArray"}],
+          "name": "Serialize", "outputs": [{"description": "Path to save serialized
+          match pairs", "name": "SaveMatches"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "0cd605ee6db6cc246efb2254f5a7022395ca0470c0142928cc2868cd042fd8ad", "url":
+          "serialize/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"KeepColumns":
+          "{{inputs.parameters.keep_columns}}"}'}
+  - name: serialize-2
+    container:
+      args: []
+      command: [python, serialize.py, --matches, /tmp/inputs/Matches/data, --products,
+        /tmp/inputs/Products/data, --keep-columns, '{{inputs.parameters.keep_columns}}',
+        --save-matches, /tmp/outputs/SaveMatches/data]
+      image: gcr.io/food-id-app/susubert/serialize:latest
+    inputs:
+      parameters:
+      - {name: keep_columns}
+      artifacts:
+      - {name: blocker-SaveMatches, path: /tmp/inputs/Matches/data}
+      - {name: product-regex-output, path: /tmp/inputs/Products/data}
+    outputs:
+      artifacts:
+      - {name: serialize-2-SaveMatches, path: /tmp/outputs/SaveMatches/data}
+    metadata:
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Serializes
+          match pairs in [COL] [VAL] format", "implementation": {"container": {"command":
+          ["python", "serialize.py", "--matches", {"inputPath": "Matches"}, "--products",
+          {"inputPath": "Products"}, "--keep-columns", {"inputValue": "KeepColumns"},
+          "--save-matches", {"outputPath": "SaveMatches"}], "image": "gcr.io/food-id-app/susubert/serialize:latest"}},
+          "inputs": [{"description": "CSV file to match pairs", "name": "Matches"},
+          {"description": "CSV file to products", "name": "Products"}, {"description":
+          "List of columns to include", "name": "KeepColumns", "type": "JsonArray"}],
+          "name": "Serialize", "outputs": [{"description": "Path to save serialized
+          match pairs", "name": "SaveMatches"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "0cd605ee6db6cc246efb2254f5a7022395ca0470c0142928cc2868cd042fd8ad", "url":
+          "serialize/component.yaml"}', pipelines.kubeflow.org/arguments.parameters: '{"KeepColumns":
+          "{{inputs.parameters.keep_columns}}"}'}
+  - name: upload-to-gcs
+    container:
+      args: []
+      command:
+      - sh
+      - -ex
+      - -c
+      - |
+        if [ -n "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
+            gcloud auth activate-service-account --key-file="${GOOGLE_APPLICATION_CREDENTIALS}"
+        fi
+        gsutil cp -r "$0" "$1"
+        mkdir -p "$(dirname "$2")"
+        echo "$1" > "$2"
+      - /tmp/inputs/Data/data
+      - '{{inputs.parameters.save_clusters}}'
+      - /tmp/outputs/GCS_path/data
+      image: google/cloud-sdk
+    inputs:
+      parameters:
+      - {name: save_clusters}
+      artifacts:
+      - {name: fin-fin, path: /tmp/inputs/Data/data}
+    outputs:
+      artifacts:
+      - {name: upload-to-gcs-GCS-path, path: /tmp/outputs/GCS_path/data}
+    metadata:
+      annotations: {author: Alexey Volkov <alexey.volkov@ark-kun.com>, canonical_location: 'https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml',
+        pipelines.kubeflow.org/component_spec: '{"implementation": {"container": {"command":
+          ["sh", "-ex", "-c", "if [ -n \"${GOOGLE_APPLICATION_CREDENTIALS}\" ]; then\n    gcloud
+          auth activate-service-account --key-file=\"${GOOGLE_APPLICATION_CREDENTIALS}\"\nfi\ngsutil
+          cp -r \"$0\" \"$1\"\nmkdir -p \"$(dirname \"$2\")\"\necho \"$1\" > \"$2\"\n",
+          {"inputPath": "Data"}, {"inputValue": "GCS path"}, {"outputPath": "GCS path"}],
+          "image": "google/cloud-sdk"}}, "inputs": [{"name": "Data"}, {"name": "GCS
+          path", "type": "String"}], "metadata": {"annotations": {"author": "Alexey
+          Volkov <alexey.volkov@ark-kun.com>", "canonical_location": "https://raw.githubusercontent.com/Ark-kun/pipeline_components/master/components/google-cloud/storage/upload_to_explicit_uri/component.yaml"}},
+          "name": "Upload to GCS", "outputs": [{"name": "GCS path", "type": "String"}]}',
+        pipelines.kubeflow.org/component_ref: '{"digest": "61daabc4502f47130be4bea91df063741141cfc0fdce487246e9f095a25fd32d",
+          "url": "https://raw.githubusercontent.com/kubeflow/pipelines/c783705c0e566c611ef70160a01e3ed0865051bd/components/contrib/google-cloud/storage/upload_to_explicit_uri/component.yaml"}',
+        pipelines.kubeflow.org/arguments.parameters: '{"GCS path": "{{inputs.parameters.save_clusters}}"}'}
+      labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.6.4, pipelines.kubeflow.org/pipeline-sdk-type: kfp}
+  arguments:
+    parameters:
+    - {name: lm, value: indobenchmark/indobert-base-p1}
+    - {name: model_id, value: '1'}
+    - {name: sbert_model_id, value: '2'}
+    - {name: batch_size, value: '32'}
+    - name: product_query
+      value: "\n        SELECT prod.id_source as id, prod.name, prod.description,\
+        \ prod.weight, prod.price, prod.main_category, prod.sub_category, mpc.master_product_id\
+        \ as master_product\n        FROM food.external_temp_products_pareto prod\
+        \ LEFT JOIN (SELECT * FROM food.master_product_clusters) mpc ON prod.id =\
+        \ mpc.master_product_id\n    "
+    - {name: keep_columns, value: '["name", "price"]'}
+    - {name: blocker_top_k, value: '100'}
+    - {name: blocker_threshold, value: '0.25'}
+    - {name: match_threshold, value: '0.8'}
+    - {name: min_cluster_size, value: '3'}
+    - {name: save_clusters, value: 'gs://ml_foodid_project/product-matching/internal/clusters.csv'}
+  serviceAccountName: pipeline-runner

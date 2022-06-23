@@ -1,74 +1,97 @@
 import random
 from datetime import datetime
-import pytz
+from google.cloud import storage, secretmanager
+from sqlalchemy import create_engine
+from kfp import Client
+import pandas as pd
+import tempfile
+import base64
+import json
 import os
 
-from utils import *
 from constants import *
 
-# ex: request = {"min_update_change": 100}
+kfp_client = Client(host=os.environ.get('KFP_HOST'))
+storage_client = storage.Client()
+tmp_dir = tempfile.mkdtemp()
 
-def update_clusters(request, context):
-    """Checks for additional products or retraining, if so, runs match pipeline"""
+client = secretmanager.SecretManagerServiceClient()
+db_connection_str = client.access_secret_version(request={"name": f"projects/501973744948/secrets/{os.environ['MYSQL_SECRET_NAME']}/versions/latest"}).payload.data.decode("UTF-8")
+db_connection = create_engine(db_connection_str)
 
-    con_db = create_db_connection()
-    actual_len = get_len(match_check_query, con=con_db)
+def update(event, context):
+    data = json.loads(base64.b64decode(event['data']).decode('utf-8'))
+    task = Task(pipeline=data.get('pipeline'), query=data.get('query'), min_difference=data.get('min_difference'), params=data.get('params'))
+    return task()
 
-    bucket = storage_client.bucket(os.environ.get('BUCKET'))
-    min_len_blob_path = os.path.join(os.environ.get('LENGTHS_BLOB'), 'external_temp_products_pareto.txt')
-    min_len_blob = bucket.blob(min_len_blob_path)
+class Task:
+    def __init__(self, pipeline, query, min_difference, params):
+        """
+        Params:
+            - pipeline: name of pipeline inside the pipeline directory gs://foodid_product_matching/pipelines/
+            - query: count query to check the difference
+            - min_difference: minimum number of new objects to start the run
+            - params: dict containing pipeline parameters
+        """
+        self.pipeline = pipeline
+        self.query = query
+        self.min_difference = min_difference
+        self.params = params
 
-    matcher_model = pd.read_sql('SELECT * FROM food.ml_models WHERE tag = "susubert" ORDER BY created_at DESC LIMIT 1').iloc[0]
-    blocker_model = pd.read_sql('SELECT * FROM food.ml_models WHERE tag = "sbert" ORDER BY created_at DESC LIMIT 1').iloc[0]
+        self.bucket = storage_client.bucket(os.environ['BUCKET'])
+        self.count_blob = self.bucket.blob(os.path.join(os.environ['LENGTHS_BLOB'], self.pipeline))
+        self.pipeline_blob = self.bucket.blob(os.path.join(os.environ['PIPELINES_BLOB'], self.pipeline))
+    
+    def count(self):
+        """Get the count of the query"""
+        df = pd.read_sql(self.query, db_connection)
+        return int(df.iloc[0, 0])
+    
+    def get_count_blob(self):
+        """Get the value of the count blob, returns None if its empty, not a real value or non-existant"""
+        if self.count_blob.exists():
+            value = self.count_blob.download_as_string()
+            try:
+                value = int(value)
+            except ValueError:
+                value = None
+        else:
+            value = None
+        return value
+    
+    def update_count_blob(self, count):
+        self.count_blob.upload_from_string(str(count))
+    
+    def run_pipeline(self):
+        pipeline_filename = os.path.join(tmp_dir, self.pipeline)
+        self.pipeline_blob.download_to_filename(pipeline_filename)
 
-    matcher_is_new = matcher_model.created_at == datetime.now(pytz.utc)
+        return kfp_client.create_run_from_pipeline_package(pipeline_filename, arguments=self.params)
 
-    if min_len_blob.exists() and min_len_blob.download_as_string() is not None:
-        # download file
-        latest_len = int(min_len_blob.download_as_string())
+    
+    def __call__(self):
+        count = self.count()
+        last_count = self.get_count_blob()
 
-        if (actual_len - latest_len > request.get('min_update_change')) or matcher_is_new:
-            # if db has been added or changed more than MIN_UPDATE_CHANGE, run the match pipeline
-            run_pipeline('match_pipeline.yaml', arguments={'model_id': matcher_model.id, 'sbert_model_id': blocker_model.id})
+        if last_count is None or (count - last_count >= self.min_difference):
+            # run the pipeline
+            result = self.run_pipeline()
+            self.update_count_blob(count)
+            return {'run': True, 'run_id': result.run_id}
+        else:
+            return {'run': False}
 
-            return "succeeded in starting run"
+        
 
-    else:
-        min_len_blob.upload_from_string(str(actual_len))
+# task = Task(pipeline="oneshot_match_pipeline.yaml", query=train_query, min_difference=100, params={
+# {
+#     "lm": "indobenchmark/indobert-base-p1",
+#     "model_id": 15,
+#     "sbert_model_id": 14,
+#     "batch_size": 32,
+#     "product_query": "SELECT p.id, pf.master_product_id, p.name, p.outlet_id, p.description, p.weight, FORMAT(FLOOR(pp.price),0) AS price, pc_main.id AS product_category_id, pc_main.name AS main_category, pc_sub.name AS sub_category FROM products p LEFT JOIN product_fins pf ON pf.product_id = p.id JOIN product_prices pp ON p.id = pp.product_id JOIN product_category_children pcc ON p.product_category_id = pcc.child_category_id JOIN product_categories pc_main ON pc_main.id = pcc.product_category_id JOIN product_categories pc_sub ON pc_sub.id = pcc.child_category_id WHERE pc_main.name IN (SELECT pc_main.name AS main_category FROM products p JOIN product_fins pf ON pf.product_id = p.id JOIN product_prices pp ON p.id = pp.product_id JOIN product_category_children pcc ON p.product_category_id = pcc.child_category_id JOIN product_categories pc_main ON pc_main.id = pcc.product_category_id JOIN product_categories pc_sub ON pc_sub.id = pcc.child_category_id GROUP BY pc_main.name HAVING count(pc_main.name) > 4) AND (pf.master_product_id IS NULL OR pf.is_removed = 1)",
+#     "blocker_top_k": 10,
+#     "blocker_threshold": 0.4,
+#     "match_threshold": 0.8
+# }
 
-        return "products or models not updated"
-
-def update_training(request, context):
-    """If additional master products train model"""
-
-    con_db = create_db_connection()
-
-    actual_len = get_len(train_check_query, con_db)
-    bucket_name = os.environ.get('BUCKET')
-    bucket = storage_client.bucket(bucket_name)
-
-    min_len_blob_path = os.path.join(os.environ.get('LENGTHS_BLOB'), 'master_products.txt')
-    min_len_blob = bucket.blob(min_len_blob_path)
-
-    if min_len_blob.exists() and min_len_blob.download_as_string() is not None:
-        # download file
-        latest_len = int(min_len_blob.download_as_string())
-
-        if actual_len - latest_len > request.get('min_update_change'):
-            # if db has been added or changed more than the MIN_UPDATE_CHANGE, run the match pipeline
-            model_blob = f'gs://{bucket_name}/models/susubert/model{random.randint(100000, 999999)}'
-            run_pipeline('train_pipeline.yaml', arguments={
-                "product_query": matcher_query, "model_save": model_blob
-            })
-
-            add_model_db(con_db, model_blob, "susubert") # add model to db
-    else:
-        min_len_blob.upload_from_string(str(actual_len))
-
-def ping_rds_test(request):
-    try:
-        con_db = create_db_connection()
-        return 'connected successfully'
-    except Exception as e:
-        print(e)
-        return f'error: {e}'
