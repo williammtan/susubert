@@ -1,6 +1,6 @@
-numpy
-pandas
-tqdm
-tensorflow
-transformers
-annoy
+numpy==1.19.5
+pandas==1.1.5
+tqdm==4.61.1
+tensorflow==2.5.0
+transformers==4.8.2
+annoy==1.17.0
