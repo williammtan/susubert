@@ -21,7 +21,6 @@ def oneshot_match_pipeline(
     blocker_threshold: float=0.25,
 
     match_threshold: float=0.8,
-    cache_matches_table: str="matches_cache",
 ):
     """This pipeline will block matches and predict product matches (using cache) to create clusters."""
 
@@ -32,12 +31,13 @@ def oneshot_match_pipeline(
     download_model_task = download_model(model_id)
 
     query_products = query_rds(query=product_query)
+    query_master_products = query_rds(query="SELECT * FROM master_products WHERE is_deleted = 0")
     preprocess_task = preprocess(query_products.output)
     re_task = product_regex(preprocess_task.outputs['products'])
 
-    blocker_task = blocker_op(re_task.output, download_sbert_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
+    blocker_task = blocker_op(re_task.output, query_master_products.output, download_sbert_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
     matcher_task = matcher_op(matches=blocker_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
-    generate_suggestions_task = generate_fin_suggestions(matches=matcher_task.output, products=re_task.output).set_gpu_limit(1)
+    generate_suggestions_task = generate_fin_suggestions(matches=matcher_task.output).set_gpu_limit(1)
 
 if __name__ == '__main__':
     if sys.argv[1] == 'compile':

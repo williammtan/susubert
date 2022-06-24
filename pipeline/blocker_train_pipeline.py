@@ -3,7 +3,7 @@ from kfp import dsl
 from kfp.components import load_component_from_url, load_component_from_file
 import sys
 
-from utils import preprocess, train_test_split, query_rds
+from utils import preprocess, query_rds
 
 @dsl.pipeline(name='train pipeline')
 def train_pipeline(
@@ -18,9 +18,8 @@ def train_pipeline(
     feature_extraction_op = load_component_from_file('feature_extraction/component.yaml') 
     batch_selection_op = load_component_from_file('batch_selection/component.yaml')
     serialize_op = load_component_from_file('serialize/component.yaml')
-    train_op = load_component_from_file('train/component.yaml')
-    evaluate_op = load_component_from_file('evaluate/component.yaml')
-    upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/74c7773ca40decfd0d4ed40dc93a6af591bbc190/components/contrib/google-cloud/storage/upload_to_explicit_uri/component.yaml')
+    train_op = load_component_from_file('train_blocker/component.yaml')
+    upload_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/c783705c0e566c611ef70160a01e3ed0865051bd/components/contrib/google-cloud/storage/upload_to_explicit_uri/component.yaml')
 
     # download and simple preprocess
     query_op = query_rds(query=product_query)
@@ -29,7 +28,7 @@ def train_pipeline(
     # preprocessing
     feature_extraction_task = feature_extraction_op(lm, preprocess_task.outputs['master_products']).set_gpu_limit(1)
     batch_selection_task = batch_selection_op(preprocess_task.outputs['master_products'], feature_extraction_task.output).set_gpu_limit(1)
-    serialize_op = serialize_op(batch_selection_task.output, preprocess_task.outputs['master_products'], keep_columns).set_gpu_limit(1)
+    serialize_op = serialize_op(batch_selection_task.output, preprocess_task.outputs['master_products'], keep_columns)
 
     # training
     train_task = train_op(serialize_op.output, lm, batch_size, learning_rate, num_epochs).set_gpu_limit(1)

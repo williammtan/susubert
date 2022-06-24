@@ -41,7 +41,7 @@ def match_pipeline(
     blocker_task = blocker_op(re_task.output, serialize_products_task.output, download_sbert_task.output, blocker_top_k, blocker_threshold).set_gpu_limit(1)
     serialize_matches_task = serialize_op(matches=blocker_task.output, products=re_task.output, keepcolumns=keep_columns)
 
-    matcher_task = matcher_op(matches=serialize_matches_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)
+    matcher_task = matcher_op(matches=serialize_matches_task.output, lm=lm, model=download_model_task.output, batchsize=batch_size, threshold=match_threshold).set_gpu_limit(1)    
     fin_task = fin(matches=matcher_task.output, products=re_task.output, min_cluster_size=min_cluster_size).set_gpu_limit(1)
     save_clusters_task = save_clusters(clusters=fin_task.output, products=re_task.output, min_cluster_size=min_cluster_size)
 
