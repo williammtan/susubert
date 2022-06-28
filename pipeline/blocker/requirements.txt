@@ -5,3 +5,4 @@ numpy==1.19.5
 transformers==4.15.0
 sentence-transformers==2.1.0
 annoy==1.17.0
+faiss==1.5.3
